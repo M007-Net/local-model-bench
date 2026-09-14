@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest something the app should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to measure or find out?
+      description: Describe the question you are trying to answer, not just the control you want added.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like the app to do?
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What are you doing today instead?
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      description: A few things this project deliberately does not do.
+      options:
+        - label: This does not require an allowlist of publishers, model families, architectures, or quantizations. Model handling stays capability-based.
+        - label: This does not require contacting a cloud service or downloading model weights.
+        - label: If it involves a published benchmark, I understand that results here are not presented as official leaderboard numbers unless the full official protocol is reproduced.

@@ -1,0 +1,62 @@
+import React,{useEffect,useState} from 'react';
+import {Plus,Trash2,Upload,X} from 'lucide-react';
+import type {Run,RunSummary} from './types';
+import {benchmarkRows,interpretScore,sameBenchmarkQuestions,scoreBands,summaryFor,type BenchmarkSelection,type PackSummary} from './benchmarks';
+import {defaultInstruction,scoringModes,type PackDraft,type PackPreview,type ScoringMode} from './benchmark-import';
+import {useModalDialog} from './dialog';
+function Meaning({pack,score=null}:{pack:PackSummary;score?:number|null}){
+ const band=interpretScore(score);
+ return <aside className="panel benchmark-meaning"><h2>Benchmark meaning</h2><h3>{pack.name}: {pack.skill}</h3><p>{pack.meaning}</p>{band&&<p className="banner success">{score?.toFixed(1)} / 100 · {band.title}</p>}<p>{pack.limit}</p><h3>What the score means</h3>{scoreBands.map(b=><div key={b.min} className={band===b?'benchmark-band selected':'benchmark-band'}><b>{b.label} · {b.title}</b><p>{b.text}</p></div>)}<p className="hint">These ranges are a plain-English guide, not official ability cutoffs. Ten correct answers give much less evidence than hundreds. Small differences may be chance.</p><h3>How this version works</h3><p>{pack.protocol}</p><p className="hint">{pack.custom?'Your own imported questions, scored by the rule you chose when you imported them. This is not a published benchmark and not a leaderboard score.':'Local adapted evaluation, not an official leaderboard score.'}</p></aside>;
+}
+const countOptions=(available:number)=>[...new Set([10,25,50,100,available].filter(n=>n>0&&n<=available))].sort((a,b)=>a-b);
+export function BenchmarkLibrary({packs,busy,onUse,onChanged}:{packs:PackSummary[];busy:boolean;onUse:(selection:BenchmarkSelection,pack:PackSummary)=>void;onChanged:(notice:string)=>Promise<void>}){
+ const [id,setId]=useState(''),[count,setCount]=useState(10),[seed,setSeed]=useState(42),[importing,setImporting]=useState(false),[confirmDelete,setConfirmDelete]=useState('');
+ const pack=packs.find(p=>p.id===id)??packs[0];
+ useEffect(()=>{if(pack&&pack.id!==id){setId(pack.id);setCount(Math.min(10,pack.count));}},[pack?.id]);
+ if(!pack)return <div className="panel"><h2>No benchmarks available</h2></div>;
+ const counts=countOptions(pack.count);
+ const choose=(p:PackSummary)=>{setId(p.id);setCount(Math.min(10,p.count));setConfirmDelete('');};
+ return <><div className="page-heading"><div><div className="eyebrow">BENCHMARKS</div><h1>Try established tests, or your own.</h1><p>Published question sets with automatic answer checks, plus any question file you import.</p></div><button className="primary" disabled={busy} onClick={()=>setImporting(true)}><Upload size={17}/>Import a pack</button></div>
+ <div className="benchmark-layout"><section><div className="test-grid">{packs.map(p=><button key={p.id} aria-pressed={id===p.id} className={'panel benchmark-card '+(id===p.id?'selected':'')} onClick={()=>choose(p)}><h2>{p.name}{p.custom&&<span className="badge">Imported</span>}</h2><p>{p.skill}</p><b>{p.count.toLocaleString()} available questions</b><p>{p.count===p.originalCount?(p.custom?'Every question in the file you imported':'Full published test split'):`${p.count} of ${p.originalCount} published items supported`}</p></button>)}</div>
+ <section className="panel"><h2>Choose your run</h2><label className="field"><span>Questions per model</span><select aria-label="Questions per model" value={count} onChange={e=>setCount(+e.target.value)}>{counts.map(n=><option key={n} value={n}>{n===pack.count?`All ${n.toLocaleString()} available`:n}</option>)}</select></label><label className="field"><span>Question seed</span><input type="number" min="0" max="2147483647" aria-invalid={!Number.isInteger(seed)} value={Number.isFinite(seed)?seed:''} onChange={e=>setSeed(e.target.value.trim()===''?NaN:+e.target.value)}/>{!Number.isInteger(seed)&&<small role="alert">Enter a whole number from 0 to 2147483647.</small>}</label><p>Keep the same pack, count, and seed to test the same questions. On the next screen choose models, concurrency, reasoning, or native MTP.</p><button className="primary" disabled={busy||!Number.isInteger(seed)||seed<0||seed>2147483647} onClick={()=>onUse({packId:pack.id,count,seed},pack)}>Use {pack.name}</button>
+ <details><summary>{pack.custom?'Imported source and question fingerprint':'Published source and dataset fingerprint'}</summary><p style={{overflowWrap:'anywhere'}}>{pack.source}</p><p style={{overflowWrap:'anywhere'}}>SHA-256: {pack.datasetHash}</p></details>
+ {pack.custom&&<div className="button-row">{confirmDelete===pack.id
+  ?<><button className="danger" disabled={busy} onClick={async()=>{await window.bench.deletePack(pack.id);setConfirmDelete('');await onChanged('Imported pack removed. Saved runs keep every question they asked.');}}><Trash2 size={15}/>Remove {pack.name}</button><button onClick={()=>setConfirmDelete('')}>Keep it</button></>
+  :<button disabled={busy} onClick={()=>setConfirmDelete(pack.id)}><Trash2 size={15}/>Remove this imported pack</button>}</div>}
+ {pack.custom&&confirmDelete===pack.id&&<p className="hint">Saved runs keep their own copy of every question, answer, and response, so removing the pack does not change any result you already have.</p>}
+ </section></section><Meaning pack={pack}/></div>
+ {importing&&<PackImport onClose={()=>setImporting(false)} onDone={async summary=>{setImporting(false);await onChanged(`Imported ${summary.name}: ${summary.count.toLocaleString()} questions.`);setId(summary.id);setCount(Math.min(10,summary.count));}}/>}
+ </>;
+}
+function PackImport({onClose,onDone}:{onClose:()=>void;onDone:(summary:PackSummary)=>void}){
+ const [preview,setPreview]=useState<PackPreview|null>(null),[draft,setDraft]=useState<PackDraft>({name:'',scoring:'exact',instruction:''}),[error,setError]=useState(''),[busy,setBusy]=useState('');
+ const dialogRef=useModalDialog<HTMLElement>(onClose);
+ const run=async(name:string,fn:()=>Promise<void>)=>{setBusy(name);setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy('');}};
+ const sample=preview?.samples[0];
+ return <div className="modal-backdrop"><section ref={dialogRef} tabIndex={-1} className="modal wide" role="dialog" aria-modal="true" aria-label="Import a benchmark pack">
+  <div className="modal-header"><div><div className="eyebrow">IMPORT</div><h2>Bring your own questions</h2></div><button aria-label="Close import" onClick={onClose}><X size={19}/></button></div>
+  <div className="modal-body">{error&&<div role="alert" className="banner error">{error}</div>}
+   <p className="hint">A JSON array, one JSON question per line, or a CSV/TSV with a header row. Each question needs a prompt and an answer: name those fields <code>prompt</code> and <code>answer</code>, or use <code>question</code>/<code>input</code>/<code>task</code> and <code>expected</code>/<code>solution</code>/<code>target</code>. Optional <code>id</code> and <code>rubric</code> are kept. Nothing is saved until you press Import.</p>
+   <div className="button-row"><button disabled={!!busy} onClick={()=>run('choose',async()=>{const p=await window.bench.choosePackFile();if(!p)return;setPreview(p);setDraft({name:p.suggestedName,scoring:p.suggestedScoring,instruction:defaultInstruction[p.suggestedScoring]});})}><Plus size={15}/>{busy==='choose'?'Reading…':preview?'Choose a different file':'Choose a question file'}</button>{preview&&<small>{preview.fileName} · {preview.count.toLocaleString()} questions</small>}</div>
+   {preview&&<>
+    <details open><summary>First {preview.samples.length} question{preview.samples.length===1?'':'s'}, as read</summary><div className="table-scroll"><table><thead><tr><th>Id</th><th>Prompt</th><th>Answer</th></tr></thead><tbody>{preview.samples.map(s=><tr key={s.id}><td>{s.id}</td><td style={{whiteSpace:'normal'}}>{s.prompt.slice(0,220)}{s.prompt.length>220?'…':''}</td><td style={{whiteSpace:'normal'}}>{s.answer.slice(0,80)}</td></tr>)}</tbody></table></div></details>
+    <div className="form-grid"><label className="field"><span>Pack name</span><input aria-label="Pack name" value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))}/></label>
+    <label className="field"><span>How to score an answer</span><select aria-label="How to score an answer" value={draft.scoring} onChange={e=>{const scoring=e.target.value as ScoringMode;setDraft(d=>({...d,scoring,instruction:defaultInstruction[scoring]}));}}>{Object.entries(scoringModes).map(([v,label])=><option key={v} value={v} disabled={v==='final-number'&&!preview.allNumeric}>{label}{v==='final-number'&&!preview.allNumeric?' (needs every answer to be a number)':''}</option>)}</select></label></div>
+    <label className="field"><span>Appended to every question</span><textarea aria-label="Appended to every question" rows={2} value={draft.instruction} onChange={e=>setDraft(d=>({...d,instruction:e.target.value}))}/><small>A response is checked against your answer with no interpretation, so the model has to be told how to reply. Clear this to send your questions exactly as written.</small></label>
+    {sample&&<details><summary>What one request will actually contain</summary><pre>{draft.instruction.trim()?`${sample.prompt}\n\n${draft.instruction.trim()}`:sample.prompt}</pre><p className="hint">Scored as: {scoringModes[draft.scoring]}. Expected answer: {sample.answer}</p></details>}
+   </>}
+  </div>
+  <div className="modal-footer"><button onClick={onClose}>Cancel</button><button className="primary" disabled={!!busy||!preview||!draft.name.trim()} onClick={()=>run('save',async()=>onDone(await window.bench.importPack(draft)))}>{busy==='save'?'Importing…':'Import pack'}</button></div>
+ </section></div>;
+}
+const settings=(r:Run)=>`MTP ${r.config.mtp??'default'} · reasoning ${r.config.reasoning} · temperature ${r.config.temperature} · context ${r.config.contextLength} · output ${r.config.maxTokens} · waves ${r.config.waves}`;
+export function BenchmarkResults({run,savedRuns,packs}:{run:Run;savedRuns:RunSummary[];packs:PackSummary[]}){
+ const [score,setScore]=useState<number|null>(null),[compareId,setCompareId]=useState(''),[other,setOther]=useState<Run|null>(null),[error,setError]=useState('');
+ useEffect(()=>{setScore(null);setCompareId('');setOther(null);},[run.id]);
+ useEffect(()=>{let alive=true;setOther(null);setError('');if(compareId)window.bench.getRun(compareId).then(r=>{if(alive)setOther(r);}).catch(e=>{if(alive)setError(e.message);});return()=>{alive=false;};},[compareId]);
+ const id=run.tests.find(t=>t.benchmark)?.benchmark?.packId;if(!id)return null;
+ const pack=summaryFor(id,packs);
+ const matching=other&&sameBenchmarkQuestions(run,other);
+ const renderRows=(r:Run)=><div className="test-grid">{benchmarkRows(r).map(row=><button className="panel benchmark-card" key={row.key+'|'+row.concurrency} onClick={()=>setScore(row.score)}><h3>{row.key}</h3><p>Concurrency {row.concurrency}</p><strong className="benchmark-score">{row.score===null?'—':row.score.toFixed(1)} / 100</strong><p>{row.passed} passed / {row.attempted} attempted · {row.expected} planned</p><p>{row.uniqueQuestions} distinct questions · {row.failed} request failures · {row.truncated} output limits reached</p><b>{row.provisional?'Provisional · run incomplete':'Completed run'}</b><p>Click for benchmark meaning →</p></button>)}</div>;
+ return <div className="benchmark-layout"><section><section className="panel"><h2>{pack.name} scores</h2><p>{settings(run)}</p><p>Score = passed responses ÷ attempted responses. A response must pass every check. Request failures count as misses; warm-ups are excluded. Repeated waves and concurrent copies are repeated attempts, not new questions.</p>{renderRows(run)}<label className="field"><span>Compare with a saved benchmark run</span><select value={compareId} onChange={e=>setCompareId(e.target.value)}><option value="">Choose a run</option>{savedRuns.filter(r=>r.id!==run.id&&r.config.benchmark).map(r=><option key={r.id} value={r.id}>{r.config.name} · MTP {r.config.mtp??'default'} · {r.created}</option>)}</select></label>{error&&<p role="alert">{error}</p>}{other&&<><h3>{other.config.name}</h3><p>{settings(other)}</p>{matching?<p>Same questions and scoring protocol. Check the settings above before attributing a difference to the model.</p>:<p className="banner error">Different questions or scoring protocol. These scores are not a controlled comparison.</p>}{matching&&renderRows(other)}</>}</section></section><Meaning pack={pack} score={score}/></div>;
+}

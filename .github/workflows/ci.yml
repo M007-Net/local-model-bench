@@ -1,0 +1,53 @@
+name: Windows CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Read-only by default. Nothing here needs to write to the repository.
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # Actions are pinned to commit SHAs rather than tags, because a tag can be
+      # moved to point at different code. Dependabot keeps these current.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      # The lockfile is what `npm ci` installs from, so a change to package.json
+      # without a regenerated lockfile would install something other than what it
+      # claims to.
+      - name: Lockfile is in sync
+        run: git diff --exit-code -- package-lock.json
+
+  audit:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Advisories against shipped dependencies fail the build. Dev-only ones are
+      # reported without failing it, since they do not reach a user's machine.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit everything (advisory only)
+        continue-on-error: true
+        run: npm audit --audit-level=moderate
