@@ -25,6 +25,14 @@ against these fingerprints if you are reviewing or redistributing the source:
 
 They are read by `vendor/gpu-sampler.ps1` to sample GPU temperature, power, and
 clocks. Nothing else loads them, and neither is used when the GPU panel is off.
+
+The sampler enables **only** the GPU subsystem (`IsGpuEnabled`). LibreHardwareMonitor
+reaches GPUs through the vendor's own user-mode libraries, so none of this loads a
+kernel driver: the CPU, motherboard and storage subsystems, which are the ones that
+need low-level ring-0 access, are never opened. That matters in practice as well as
+legally — the driver those subsystems rely on is a frequent antivirus false positive
+and would require administrator rights. This app installs per-user and requests no
+elevation at all.
 Regenerate these values with:
 
 ```powershell
