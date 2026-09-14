@@ -6,6 +6,160 @@ A Windows desktop app for testing downloaded LM Studio models at multiple concur
 > endorsed by, or supported by LM Studio. It talks to LM Studio's local API on
 > loopback, and to nothing else.
 
+## What this is, in plain words
+
+You already run AI models on your own computer using a free program called
+**LM Studio**. This app asks those models a set of questions, times how fast they
+answer, checks whether the answers are right, and shows you the results side by
+side. Everything happens on your machine. Nothing is uploaded.
+
+It is useful for answering questions like *"is the bigger model actually better
+for what I do, or just slower?"*
+
+It only measures models you have already downloaded. It never downloads a model,
+never runs code a model writes, never browses the web, and never contacts a cloud
+AI provider.
+
+---
+
+## Contents
+
+- [Before you start](#before-you-start) — the two things you need
+- [Step 1: Install and open the app](#step-1-install-and-open-the-app)
+- [Step 2: Run your first benchmark](#step-2-run-your-first-benchmark)
+- [Step 3: Read the results](#step-3-read-the-results)
+- [If something looks wrong](#if-something-looks-wrong)
+- [Build from source](#build-from-source) — only if you want to compile it yourself
+
+Everything after that is reference material. You do not need it to get going.
+
+---
+
+## Before you start
+
+You need two things. Both are free.
+
+**1. LM Studio, with at least one model downloaded.**
+
+- Get it from <https://lmstudio.ai> and install it like any other program.
+- Open it. Go to the **Discover** tab (the magnifying glass), pick any model, and
+  press **Download**. A small one is fine to start — look for something around
+  4 GB. This takes a while; it is a large file.
+- Go to the **Developer** tab and turn the local server **on**. You should see it
+  say it is running on port `1234`.
+
+> **Why the server?** Local Model Bench talks to LM Studio the same way a web page
+> talks to a website — except it never leaves your computer. If the server is off,
+> there is nothing for it to talk to.
+
+**2. Windows 10 or 11, 64-bit.** That is all. You do not need an administrator
+account, and nothing here needs Python or a terminal.
+
+---
+
+## Step 1: Install and open the app
+
+1. Go to the
+   [Releases page](https://github.com/M007-Net/local-model-bench/releases) and
+   download the file named `Local-Model-Bench-Setup-1.8.0.exe`.
+
+   > If that page is empty or you cannot open it, no release has been published
+   > yet. Until one is, the only way to get the app is
+   > [Build from source](#build-from-source), which needs a little comfort with a
+   > terminal. It is fine to wait for a release instead.
+
+2. **Check the file is genuine before you run it.** This installer is not
+   code-signed, so this check is the only way to be sure you got the real file.
+   Right-click the Start button, choose **Terminal**, and paste this in:
+
+   ```powershell
+   Get-FileHash -Algorithm SHA256 "$HOME\Downloads\Local-Model-Bench-Setup-1.8.0.exe"
+   ```
+
+   It prints a long string of letters and numbers. It must match the one listed on
+   the release page. **If it does not match, delete the file and do not run it.**
+
+3. Run the installer. Windows will show a blue box saying **"Windows protected
+   your PC"**. This is expected — it appears for any program without a paid
+   signing certificate, not because anything is wrong. Click **More info**, then
+   **Run anyway**.
+
+4. Choose where to install it, then finish. You get a desktop shortcut.
+
+5. Open **Local Model Bench**. It opens on the **Models** screen.
+
+---
+
+## Step 2: Run your first benchmark
+
+1. Look at the top-right corner. It should say **LM Studio connected**. If it says
+   something else, see [If something looks wrong](#if-something-looks-wrong).
+
+2. Your downloaded models appear as cards. **Click one** to select it. A tick
+   appears in its corner. You can pick more than one to compare them.
+
+3. Click **Configure benchmark**.
+
+4. Click **Quick**. That is a short run, good for a first go.
+
+5. Click **Start benchmark**.
+
+The app now sends the questions to the model and waits. A first run on a small
+model takes a few minutes. You can watch the responses arrive as they come in.
+Leave it alone until it finishes.
+
+---
+
+## Step 3: Read the results
+
+When it finishes you land on **Results**.
+
+- **Generation tok/s** — how fast the model writes, in words-ish per second.
+  Bigger is faster.
+- **Objective** — out of 100, how often the answer was actually correct, checked
+  automatically. Bigger is better.
+- **Median latency** — the typical wait before an answer. Smaller is better.
+
+Every response the model gave is saved, and you can read any of them. Nothing is
+summarised away.
+
+The **Benchmark meaning** panel explains, in plain English, what a score does and
+does not tell you. It is worth reading once — a score of 90 on a maths test does
+not mean the model is good at everything.
+
+To keep a copy, press **Export** and choose:
+
+- **HTML** if you want something to look at or print.
+- **CSV** if you want to open it in Excel.
+
+---
+
+## If something looks wrong
+
+**It says the server is not reachable, or "LM Studio is not answering".**
+LM Studio is closed, or its server is off. Open LM Studio, go to **Developer**,
+and switch the server on. Then press **Refresh** in Local Model Bench.
+
+**No models appear.**
+You have not downloaded one yet, or LM Studio is pointed at a different folder.
+Download a model in LM Studio's **Discover** tab, then press **Refresh**.
+
+**It says it cannot find the LM Studio command-line tool.**
+LM Studio normally installs this alongside itself. If the app cannot find it, open
+**Settings** and point it at `lms.exe` directly — it usually lives in
+`.lmstudio\bin` inside your user folder.
+
+**A run stops with an error about context length or memory.**
+The model is too big for your graphics card at the settings chosen. Lower the
+concurrency to 1, or pick a smaller model.
+
+**The app will not start at all.**
+It shows a message box saying why. The most common cause is that its saved data
+file was damaged — in that case it moves the old file aside and starts fresh on
+the next launch.
+
+---
+
 ## Model compatibility
 
 There is no built-in model list or model-family allowlist. The app discovers every language model returned by the local LM Studio `/api/v1/models` endpoint each time you refresh. Install or remove models in LM Studio; no application code changes are needed for new model names, publishers, architectures, or quantizations.
@@ -45,27 +199,6 @@ Because a response is checked against your answer with no interpretation, the mo
 An imported pack is stored in your local database next to the runs that use it, gets a SHA-256 fingerprint over its questions so saved runs can be compared for question identity, and can be removed at any time. **Removing a pack never changes a result:** every run keeps its own copy of every question, answer, check, and response it recorded. Published packs are part of the app and cannot be removed. Limits: 5,000 questions, 25 MB, 20,000 characters per prompt.
 
 Imported scores are your own test set, not a published benchmark and not a leaderboard result, and the Benchmark meaning panel says so.
-
-## Get started
-
-Install LM Studio first, download at least one model in it, and start its local
-server from LM Studio's Developer tab. Local Model Bench measures models LM Studio
-has already downloaded; it never downloads one itself.
-
-There is no prebuilt installer committed to this repository. Either take
-`Local-Model-Bench-Setup-<version>.exe` from the
-[Releases page](https://github.com/M007-Net/local-model-bench/releases) — visible
-only to accounts with access while the repository is private, and empty until a
-release is published — or build it yourself with **Build from source** below,
-which writes the installer to `outputs/`.
-
-1. Run the installer and open **Local Model Bench** from your desktop.
-2. On **Models**, refresh the library. If needed, use **Start LM Studio Server**. LM Studio is required, with its local server started and its `lms` command-line tool installed. Any LM Studio build that exposes the native `/api/v1/models` and `/api/v1/chat` endpoints will work; the app checks for those endpoints rather than for a version number.
-3. Select one or more models, then choose **Configure benchmark**.
-4. Select **Speed + quality**, **Speed only**, or **Quality only**. Choose tests and a Quick, Balanced, Stress, or Custom sweep.
-5. Start the benchmark. Use **Results** to compare measurements and inspect responses.
-
-Only existing downloaded models are used. The app does not download models, execute generated code, browse the web, or automatically contact cloud providers.
 
 ## Organize the model library
 

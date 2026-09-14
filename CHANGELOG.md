@@ -105,6 +105,12 @@ First version prepared for public release. Everything below is measured against
 
 ### Documentation
 
+- The README now opens with a plain-language guide: what the app is for, the two
+  things you need, and numbered steps through installing it, running a first
+  benchmark and reading the result, plus what to do when something looks wrong.
+  It previously opened with model-compatibility detail — reasoning intersections,
+  MTP metadata, quantization — before telling anyone what to do.
+
 - The update check names both hosts it contacts, not one.
 - The guarantee that no image leaves the machine is stated as what this app
   enforces, rather than attributed to LM Studio.
