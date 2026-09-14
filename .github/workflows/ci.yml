@@ -31,6 +31,11 @@ jobs:
       # claims to.
       - name: Lockfile is in sync
         run: git diff --exit-code -- package-lock.json
+      # The build regenerates the bundled-dependency notices. If that changes the
+      # committed file, a dependency moved without its notice following, and the
+      # installer would ship MIT/ISC code without the notice those licences require.
+      - name: Third-party notices are current
+        run: git diff --exit-code -- THIRD-PARTY-NOTICES.txt
 
   audit:
     runs-on: windows-latest

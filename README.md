@@ -218,7 +218,9 @@ Different runs used different settings. A row that pools more than one concurren
 Update checking is off until you name a repository. Enter one as `owner/name` under
 **Settings → Updates** — `M007-Net/local-model-bench` for builds of this project, or
 your own fork — and optionally tick **Check when the app starts**. Leaving the field
-empty means the app makes no outbound request at all. The app then asks `api.github.com` for that repository's latest published release, and, if the release publishes a `SHA256SUMS.txt` asset, reads that file from GitHub's release storage so the checksum is known before anything is downloaded. Those two hosts are the only ones contacted. Drafts and prereleases are ignored, and a release whose tag is not a higher `MAJOR.MINOR.PATCH` than the installed version is not an update.
+empty means the app makes no outbound request at all. The app then asks `api.github.com` for that repository's latest published release, and, if the release publishes a `SHA256SUMS.txt` asset, reads that file from GitHub's release storage so the checksum is known before anything is downloaded. The only hosts it will talk to are `api.github.com` and GitHub's release storage —
+`github.com`, `objects.githubusercontent.com` and `release-assets.githubusercontent.com`.
+A release file offered from anywhere else is refused rather than downloaded. Drafts and prereleases are ignored, and a release whose tag is not a higher `MAJOR.MINOR.PATCH` than the installed version is not an update.
 
 When there is one, an **Update available** button appears in the header next to the connection status, the way LM Studio does it. It opens a panel with the version, the release notes, the installer's name and size, and its checksum. No installer is downloaded until you press **Download**, and nothing runs until you press **Close and install**. The installer is verified against the published checksum as it arrives and read again immediately before it is launched, so a file that changed in between is deleted rather than run. A release that publishes no checksum is never downloaded for installation.
 
