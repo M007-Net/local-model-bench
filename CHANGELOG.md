@@ -103,6 +103,17 @@ First version prepared for public release. Everything below is measured against
 - The benchmark HTML report carries the same Content-Security-Policy as the chart
   report.
 
+### Changed
+
+- **CI runs on a supported action runtime, and tests the Node floor it claims.**
+  `actions/checkout` and `actions/setup-node` were pinned to v4, which targets the
+  Node 20 action runtime; runners now force those onto Node 24 and warn on every
+  run. They are pinned to v7.0.1 and v7.0.0 by commit SHA. The build job also ran
+  on Node 24 alone, so it is now a matrix over 22 and 24 — `package.json` declares
+  `>=22`, and `node:sqlite`, which the store and several tests depend on, only
+  arrived in 22.5 as experimental. That it works on 22 is now checked rather than
+  assumed. Verified in a scratch repository before being applied here.
+
 ### Documentation
 
 - The README now opens with a plain-language guide: what the app is for, the two
