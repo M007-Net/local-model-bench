@@ -33,4 +33,9 @@ Get-FileHash -Algorithm SHA256 vendor\*.dll
 
 Benchmark dataset SHA-256 fingerprints are embedded in `src/benchmark-data/packs.json` and saved with each run. Adaptations are described in the README and UI. The importer reads local upstream snapshots from `work/benchmark-sources`; normal builds use the bundled JSON and do not download datasets.
 
-Electron and npm packages retain their own licenses. Install exact dependencies using `npm ci` and the committed lockfile. Electron's distributed license notices are included in the packaged application. Preserve bundled attribution files when redistributing source or installers.
+Packages compiled into the application bundle — react, react-dom, scheduler and
+lucide-react — have their licence texts reproduced in full in
+[THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which `npm run build`
+regenerates and the installer ships. The minifier strips the banner comments from
+the bundle itself, so that file is where those notices live. Electron and the
+remaining npm packages retain their own licenses. Install exact dependencies using `npm ci` and the committed lockfile. Electron's distributed license notices are included in the packaged application. Preserve bundled attribution files when redistributing source or installers.
