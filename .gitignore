@@ -1,0 +1,23 @@
+node_modules/
+dist/
+dist-electron/
+work/
+outputs/
+*.log
+
+# Local credentials, history, model weights, and editor state
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.gguf
+*.safetensors
+*.pem
+*.key
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

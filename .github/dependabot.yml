@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # React and its types move together; splitting them across pull requests
+      # just produces a broken intermediate state.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      build-tooling:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "esbuild"
+          - "typescript"
+          - "tsx"
+          - "@types/node"
+      electron:
+        patterns:
+          - "electron"
+          - "electron-builder"
+
+  # Actions are pinned to commit SHAs, so Dependabot is what keeps them moving.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

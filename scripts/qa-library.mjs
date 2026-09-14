@@ -1,0 +1,46 @@
+import {_electron as electron} from 'playwright';
+import path from 'node:path';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const root=process.cwd();fs.mkdirSync('work/library-qa',{recursive:true});
+const app=await electron.launch({...(process.env.LMB_QA_EXE?{executablePath:process.env.LMB_QA_EXE}:{}),args:process.env.LMB_QA_EXE?[]:[root],env:{...process.env,LMB_DATA_DIR:path.join(root,'work/library-qa/data')},timeout:60000});
+const page=await app.firstWindow();page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ let models;try{models=await page.evaluate(()=>window.bench.models());}catch{await page.evaluate(()=>window.bench.startServer());models=await page.evaluate(()=>window.bench.models());await page.getByRole('button',{name:'Refresh models',exact:true}).click();}
+ assert.ok(models.length>0);
+ await page.getByRole('button',{name:'Reset view',exact:true}).click();
+ await page.locator('.model-card').first().waitFor();
+ const vision=models.filter(m=>m.capabilities?.vision===true);assert.ok(vision.length>0);
+ await page.getByLabel('Vision support',{exact:true}).selectOption('yes');
+ assert.equal(await page.locator('.model-card').count(),vision.length);
+ await page.getByRole('button',{name:'Select shown',exact:true}).click();
+ assert.equal(await page.locator('.model-card.selected').count(),vision.length);
+ await page.getByLabel('Vision support',{exact:true}).selectOption('no');
+ await page.getByText(`${vision.length} selected model${vision.length!==1?'s':''} hidden by filters`,{exact:true}).waitFor();
+ assert.equal(await page.locator('.model-card.selected').count(),0);
+ await page.getByLabel('Vision support',{exact:true}).selectOption('yes');
+ assert.equal(await page.locator('.model-card.selected').count(),vision.length);
+ const quant=vision[0].quantization.name;
+ await page.getByLabel('Quantization',{exact:true}).selectOption(quant);
+ assert.equal(await page.locator('.model-card').count(),vision.filter(m=>m.quantization?.name===quant).length);
+ await page.getByLabel('Search models',{exact:true}).fill('no-model-can-match-this-test');
+ await page.getByRole('heading',{name:'No models match your filters'}).waitFor();
+ await page.getByRole('button',{name:'Reset view',exact:true}).click();
+ await page.getByLabel('Sort by',{exact:true}).selectOption('size-asc');
+ const expected=[...models].sort((a,b)=>a.size_bytes-b.size_bytes)[0].key;
+ assert.equal(await page.locator('.model-key').first().innerText(),expected);
+ await page.getByLabel('Publisher',{exact:true}).selectOption(vision[0].publisher);
+ assert.equal(await page.locator('.model-card').count(),models.filter(m=>m.publisher===vision[0].publisher).length);
+ await page.getByRole('button',{name:'Reset view',exact:true}).click();
+ await page.getByLabel('Vision support',{exact:true}).selectOption('yes');
+ await page.getByLabel('Sort by',{exact:true}).selectOption('quant');
+ await page.reload();await page.locator('.model-card').first().waitFor();
+ assert.equal(await page.getByLabel('Vision support',{exact:true}).inputValue(),'yes');
+ assert.equal(await page.getByLabel('Sort by',{exact:true}).inputValue(),'quant');
+ await page.waitForTimeout(250);await page.screenshot({path:'work/library-qa/vision.png'});
+ await page.getByRole('button',{name:'Reset view',exact:true}).click();await page.waitForTimeout(250);await page.screenshot({path:'work/library-qa/all-models.png'});
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1080,850));await page.waitForTimeout(250);await page.screenshot({path:'work/library-qa/compact.png'});
+ assert.deepEqual(errors,[]);fs.writeFileSync('work/library-qa/result.json',JSON.stringify({passed:true,models:models.length,visionModels:vision.length,errors,installed:!!process.env.LMB_QA_EXE},null,2));
+ console.log('Library filters, sorting, hidden selection, persisted view, and compact layout passed.');
+}finally{await app.close();}

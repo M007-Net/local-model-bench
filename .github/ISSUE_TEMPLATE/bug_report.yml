@@ -1,0 +1,71 @@
+name: Bug report
+description: Something did not work the way it should have
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this has a security angle, please use the Security tab instead of a
+        public issue. See SECURITY.md.
+
+        **Do not paste an API token, a benchmark database, model output, or a
+        local filesystem path into this form.**
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what the app did instead of what you expected.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Shown at the bottom of the sidebar.
+      placeholder: "1.8.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where in the app?
+      options:
+        - Models / library
+        - Benchmarks
+        - Tests
+        - Running a benchmark
+        - Results, charts, or comparison
+        - Grading
+        - Export
+        - Settings
+        - Somewhere else
+    validations:
+      required: true
+
+  - type: input
+    id: lmstudio
+    attributes:
+      label: LM Studio version
+      placeholder: "0.3.x"
+
+  - type: textarea
+    id: model
+    attributes:
+      label: Model and configuration
+      description: Quantization, context length, concurrency, and anything else that seems relevant. A model identifier is fine; please do not paste local paths.
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Error text
+      description: Paste the message as it appeared. Check it for tokens and paths before submitting.
+      render: text
+
+  - type: input
+    id: hardware
+    attributes:
+      label: GPU and Windows version
+      placeholder: "RTX 4090, Windows 11 24H2"

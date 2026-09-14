@@ -1,0 +1,2 @@
+GSM8K: Copyright (c) 2021 OpenAI. CRUXEval: Copyright (c) 2023 Meta. IFEval data and adapted check logic: Copyright Google LLC, Apache-2.0.
+Bundled September 12, 2026. Sources and SHA-256 snapshot hashes are in each saved benchmark test. Prompts/output formats and scoring are adapted for this local app and are not official leaderboard protocols.

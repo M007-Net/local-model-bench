@@ -1,0 +1,20 @@
+* text=auto
+
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.md text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.mjs text eol=lf
+
+# The bundled sensor libraries and the icons are binary; never touch their bytes.
+*.dll binary
+*.ico binary
+*.png binary
+
+# 2.75 MB of benchmark questions on one line. Marking it keeps it out of diffs,
+# where it is unreadable anyway, and out of language statistics.
+src/benchmark-data/packs.json -diff linguist-generated
+package-lock.json -diff linguist-generated

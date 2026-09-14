@@ -1,0 +1,45 @@
+import {_electron as electron} from 'playwright';
+import {DatabaseSync} from 'node:sqlite';
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const root=process.cwd(),dir=path.join(root,'work/comparison-qa/data');fs.mkdirSync(dir,{recursive:true});
+const source=JSON.parse(fs.readFileSync('outputs/Live-validation-results.json','utf8'));
+const app=await electron.launch({...(process.env.LMB_QA_EXE?{executablePath:process.env.LMB_QA_EXE}:{}),args:process.env.LMB_QA_EXE?[]:[root],env:{...process.env,LMB_DATA_DIR:dir},timeout:60000});
+const page=await app.firstWindow();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ const db=new DatabaseSync(path.join(dir,'bench.sqlite'));const {samples,waves,...doc}=source;
+ db.prepare('INSERT OR REPLACE INTO runs VALUES (?,?)').run(source.id,JSON.stringify(doc));
+ for(const s of samples)db.prepare('INSERT OR REPLACE INTO samples VALUES (?,?,?)').run(s.id,s.runId,JSON.stringify(s));
+ for(const w of waves)db.prepare('INSERT OR REPLACE INTO waves VALUES (?,?,?)').run(w.id,w.runId,JSON.stringify(w));
+ db.exec('DELETE FROM model_profiles');db.close();
+ const open=async()=>{await page.reload();await page.locator('nav').getByRole('button',{name:'Results',exact:true}).click();await page.getByLabel('Saved run').selectOption(source.id);await page.getByRole('heading',{name:'Compare models',exact:true}).waitFor();};
+ await open();
+ const graph=page.locator('.auto-chart').filter({has:page.getByRole('heading',{name:'Generation speed',exact:true})});
+ assert.equal(await graph.locator('circle').count(),4);
+ await page.getByLabel('Parameter range',{exact:true}).selectOption('25:35');assert.equal(await graph.locator('circle').count(),4);
+ await page.getByLabel('Maximum parameters',{exact:true}).fill('30');assert.equal(await graph.locator('circle').count(),2);
+ await page.getByRole('button',{name:'Reset comparison'}).click();
+ await page.getByLabel('Model type',{exact:true}).selectOption('moe');
+ await page.getByLabel('Parameter basis',{exact:true}).selectOption('activeB');
+ await page.getByLabel('Minimum parameters',{exact:true}).fill('2');await page.getByLabel('Maximum parameters',{exact:true}).fill('3');
+ assert.equal(await graph.locator('circle').count(),2);
+ const key=source.config.modelKeys[0];
+ await page.getByLabel('Show '+key,{exact:true}).uncheck();assert.equal(await graph.locator('circle').count(),0);
+ await page.getByLabel('Show '+key,{exact:true}).check();
+ await graph.locator('circle').first().hover();await page.getByRole('tooltip').waitFor();assert.ok((await page.getByRole('tooltip').innerText()).includes(key));
+ await graph.locator('circle').first().click();await page.getByRole('heading',{name:key,exact:true}).waitFor();
+ await page.getByRole('button',{name:/View response/}).first().click();await page.getByRole('dialog',{name:'Response detail'}).waitFor();await page.getByRole('button',{name:'Close response',exact:true}).click();
+ await page.getByRole('button',{name:'Close model inspection'}).click();
+ await page.getByRole('button',{name:'Edit metadata',exact:true}).click();await page.getByLabel('Architecture type').selectOption('dense');await page.getByRole('button',{name:'Save model metadata'}).click();
+ await page.getByRole('dialog',{name:'Model metadata'}).waitFor({state:'hidden'});
+ await page.getByLabel('Model type',{exact:true}).selectOption('dense');await page.getByLabel('Parameter range',{exact:true}).selectOption(':');assert.equal(await graph.locator('circle').count(),2);
+ await open();await page.getByLabel('Model type',{exact:true}).selectOption('dense');assert.equal(await graph.locator('circle').count(),2);
+ // Restore the deliberately changed QA metadata to its actual MoE values before the preview.
+ await page.getByRole('button',{name:'Edit metadata',exact:true}).click();await page.getByLabel('Architecture type').selectOption('moe');await page.getByLabel('Active billions').fill('3');await page.getByRole('button',{name:'Save model metadata'}).click();
+ await page.getByRole('dialog',{name:'Model metadata'}).waitFor({state:'hidden'});await page.getByRole('button',{name:'Reset comparison'}).click();
+ await page.getByLabel('Parameter range',{exact:true}).selectOption('25:35');await page.screenshot({path:'work/comparison-qa/filters.png',fullPage:true});
+ await graph.locator('circle').first().hover();await page.getByRole('tooltip').waitFor();await page.screenshot({path:'work/comparison-qa/hover.png'});
+ assert.deepEqual(errors,[]);console.log('Database-backed comparison: ranges, Dense/MoE, active parameters, selection, tooltip, click-through, metadata save/reload all passed.');
+}finally{await app.close();}

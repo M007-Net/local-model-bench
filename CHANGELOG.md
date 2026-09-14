@@ -1,0 +1,111 @@
+# Changelog
+
+All notable changes to Local Model Bench are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
+[semantic versioning](https://semver.org/spec/v2.0.0.html).
+
+Dates are the date the version was prepared.
+
+## 1.8.0 — 2026-09-14
+
+First version prepared for public release. Everything below is measured against
+1.7.x, which was never published.
+
+### Added
+
+- **Import your own pack.** A JSON, JSON Lines, CSV, or TSV file of questions and
+  answers becomes a benchmark pack with a scoring rule you choose. Capped at
+  5,000 questions and 25 MB. Imported packs live beside the published ones and can
+  never take over a published pack's id.
+- **MIT license.** `LICENSE` is now present, `package.json` declares it, and
+  `THIRD_PARTY.md` separates it from the bundled components, which keep their own
+  terms.
+- `LICENSE` and `THIRD_PARTY.md` ship inside the installer. The only pointer to
+  LibreHardwareMonitor's source is in `THIRD_PARTY.md`, and MPL-2.0 requires
+  recipients of a binary to be told where to get it.
+- `.gitattributes`, so line endings are consistent and the 2.75 MB question file
+  stays out of diffs and language statistics.
+- `repository`, `homepage` and `bugs` metadata in `package.json`, pointing at
+  `M007-Net/local-model-bench`. The in-app updater does not read these — it takes
+  its repository from **Settings → Updates**, and stays off until you name one — so
+  a fork inherits no update checking it did not ask for.
+
+### Fixed
+
+- **Exporting a run of imported questions crashed.** The HTML and Markdown reports
+  looked the pack's description up in a three-entry table of published benchmarks,
+  so any imported pack — and any run whose pack had since been deleted — threw
+  `Cannot read properties of undefined`. Both formats now describe the benchmark
+  from the metadata the saved run itself carries. CSV and JSON were unaffected.
+- **A grader that could not run scored the model as wrong.** An instruction check
+  this build does not implement threw, was caught alongside "the answer was not
+  JSON", and counted as a failed check with its full weight in the denominator —
+  silently lowering a benchmark score with nothing in the number to show it. Such
+  a check is now marked unscorable and left out of both sides of the score, and an
+  unsupported check is refused while the test is being written.
+- **A failure before the window opened left an invisible process.** Anything thrown
+  while opening the database — a corrupt file, a locked one, a folder that could
+  not be created — was an unhandled rejection: no window, no message, and the
+  single-instance lock still held, so relaunching did nothing. Startup now reports
+  the failure and exits, a database that cannot be opened at all is moved aside and
+  recreated, and one unreadable row no longer makes every saved run unreachable.
+- **The path to the LM Studio CLI was only checked for being a string.** Any
+  existing file, including one on a network share, could become the executable the
+  app launched. It must now be an absolute local path to an `.exe`, checked both
+  when saved and when used.
+- **Settings persisted whatever the window sent.** The stored object is now built
+  field by field rather than by spreading the incoming one.
+- **A second instance could rewrite a running benchmark.** `app.quit()` is
+  asynchronous, so the losing instance kept going and opened the same database,
+  where recovery marked the in-flight run interrupted.
+- **An update could be installed without a checksum, and was not re-checked before
+  running.** A release that publishes no checksum is now refused, and the installer
+  is hashed again at the moment it is launched, so a file swapped between
+  verification and the click is deleted rather than run.
+- **Every LM Studio connection failure read "fetch failed".** Connection refused,
+  an IPv4/IPv6 mismatch on `localhost`, a wrong port answering with HTML, and a
+  timeout now each say what happened and what to do. The model list also honours
+  the configured load timeout instead of a hardcoded ten seconds.
+- **An imported grade did not appear until the app restarted.** It replaced an
+  existing row rather than adding one, so the history cache saw no change.
+- **Exports were written in place with no error handling.** A full disk left a
+  truncated report that looked complete. Reports are now written beside the target
+  and renamed into place.
+- **Instruction keywords were compiled as regular expressions.** A keyword such as
+  `(a+)+$` could backtrack for an unbounded time on the worker thread, where cancel
+  cannot interrupt it. Keywords are matched literally, which is what they always
+  were.
+- **A stray line on the GPU sampler's stderr disabled telemetry for the run** — in
+  the report only. Readings kept arriving while the note claimed none were
+  available. Only a real error or a non-zero exit counts now.
+- PowerShell is launched from an absolute path rather than found on `PATH`.
+- The history overview could show older data than it had already loaded, because two
+  overlapping reads could finish out of order.
+- Clearing the question seed silently selected seed 0, quietly changing which
+  questions a run asked. Clearing any numeric field now keeps the previous value.
+- `NaN` and `∞` could reach the run preview; concurrency levels outside 1–256 are
+  now reported rather than silently accepted.
+- Removing an imported pack left the Run screen pointing at it with Start enabled.
+- Four grouped fields wrapped their checkboxes in a second `<label>`, so clicking
+  the caption toggled the first checkbox and a screen reader read that checkbox by
+  the group's name.
+- Benchmark cards, the running indicator, and imported-pack ids are now announced
+  correctly; an empty timestamp renders as `—` rather than `Invalid Date`.
+- An imported pack's item id and rubric are now bounded, as prompts and answers
+  already were.
+- `npm run qa` explains that it needs LM Studio running instead of printing a
+  Playwright stack trace.
+- The benchmark HTML report carries the same Content-Security-Policy as the chart
+  report.
+
+### Documentation
+
+- The update check names both hosts it contacts, not one.
+- The guarantee that no image leaves the machine is stated as what this app
+  enforces, rather than attributed to LM Studio.
+- The LM Studio requirement is stated as the endpoints the app actually needs,
+  replacing a version number that no code checked and that the project's own issue
+  template contradicted.
+- Building from source now includes the clone step, says the commands run in order,
+  and explains that `npm start` needs `npm run build` first.
+- Node version is stated consistently with `engines` and CI.
