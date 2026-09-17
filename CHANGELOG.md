@@ -6,6 +6,19 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.11.1 — 2026-09-17
+
+### Fixed
+
+- **The depth axis existed but nothing opened on it.** 1.11.0 added *Read across* and
+  then defaulted it to concurrent requests, so a prediction-depth sweep still opened
+  showing every depth stacked at one horizontal position — the control was there, but
+  the graphs looked exactly as they had before and the feature was invisible unless
+  you went looking for it. The graphs now open on whichever dimension the run actually
+  varied: a run that swept depths at a single concurrency level opens on maximum
+  predictions, and anything that varied concurrency still opens on concurrency.
+  Choosing an axis by hand continues to override it.
+
 ## 1.11.0 — 2026-09-17
 
 ### Added

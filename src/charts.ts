@@ -15,6 +15,11 @@ export type XAxis='concurrency'|'mtpDepth';
 export const xAxisLabels:Record<XAxis,string>={concurrency:'Concurrent requests',mtpDepth:'Maximum predictions (0 = MTP off)'};
 // A row from a run that measured no depth sits at 0, which is where "MTP off" belongs anyway.
 export const xValueOf=(r:ChartRow,axis:XAxis):number=>axis==='mtpDepth'?(r.mtpDepth??0):r.concurrency;
+// Which axis a run should open on, before anyone chooses. A run that swept depths at a single
+// concurrency level varied exactly one thing, and it is not concurrency: opening on that axis puts
+// every depth at the same x and hides the run's whole subject behind a stack of points.
+export const defaultXAxis=(depthsMeasured:number,concurrencyVaries:boolean):XAxis=>
+ depthsMeasured>1&&!concurrencyVaries?'mtpDepth':'concurrency';
 export function chartSpecs(score:ScoreSource):ChartSpec[]{return [
  {key:'generationTps',title:'Generation speed',unit:'Tokens / second',description:'Average speed per successful request. Higher is faster.'},
  {key:'estimatedPrefillTps',title:'Estimated prefill speed',unit:'Tokens / second',description:'Client-timed prompt processing; caching and buffering can affect this estimate.'},

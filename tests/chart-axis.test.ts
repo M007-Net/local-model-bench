@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chartSpecs,renderChart,xAxisLabels,xValueOf,type ChartRow} from '../src/charts';
+import {chartSpecs,defaultXAxis,renderChart,xAxisLabels,xValueOf,type ChartRow} from '../src/charts';
 
 // A sweep run at one concurrency level: the case where the old axis had nothing to spread along.
 const sweep=(depth:number,gen:number):ChartRow=>({
@@ -49,4 +49,15 @@ test('the concurrency axis is untouched for an ordinary run',()=>{
  const xs=[...svg.matchAll(/<circle[^>]*cx="([\d.]+)"/g)].map(m=>m[1]);
  assert.equal(new Set(xs).size,3);
  assert.match(svg,/Concurrent requests/);
+});
+
+// The complaint that prompted this: the control existed but the graphs still opened on concurrency,
+// so a sweep run at one concurrency level looked exactly as it had before.
+test('a sweep at one concurrency opens on the depth axis without being asked',()=>{
+ assert.equal(defaultXAxis(6,false),'mtpDepth','six depths, one concurrency: depth is the only thing that varied');
+ // Both dimensions varied, so concurrency stays the default and depth remains one click away.
+ assert.equal(defaultXAxis(6,true),'concurrency');
+ // No sweep: there is no depth axis to open on.
+ assert.equal(defaultXAxis(1,false),'concurrency');
+ assert.equal(defaultXAxis(0,false),'concurrency');
 });

@@ -1,7 +1,7 @@
 import {useMemo,useState} from 'react';
 import type {Run} from './types';
 import {summaries} from '../electron/export';
-import {chartSpecs,renderChart,legendHtml,scoreLabels,xAxisLabels,type ChartRow,type ScoreSource,type XAxis} from './charts';
+import {chartSpecs,renderChart,legendHtml,scoreLabels,defaultXAxis,xAxisLabels,type ChartRow,type ScoreSource,type XAxis} from './charts';
 import {measuredDepths,mtpDepthText} from './mtp-sweep';
 import type {HistoryRow} from './history';
 import {backendOf} from '../electron/runtime';
@@ -28,10 +28,15 @@ export function ChartsPanel({run,onModel,history=[]}:{run:Run;onModel?:(key:stri
  // Depths measured by this run. With more than one, the graphs can read across depth instead of
  // across concurrency — which is the only way to see a sweep run at a single concurrency level.
  const depths=useMemo(()=>measuredDepths(run),[run]);
- const [xAxis,setXAxis]=useState<XAxis>('concurrency');
+ // Whether concurrency is a dimension of this run at all. A sweep run at a single concurrency level
+ // has nothing to read across on that axis, so defaulting to it shows the run's whole subject as a
+ // stack of points on one vertical line — the graphs open on whichever axis the run actually varied.
+ const concurrencyVaries=useMemo(()=>new Set(summaries(run).map(r=>r.concurrency)).size>1,[run]);
+ // null until chosen, so the default can follow the run rather than being frozen at first render.
+ const [xAxis,setXAxis]=useState<XAxis|null>(null);
  // A run with one depth has no depth axis to offer, and one that loses its sweep while selected
  // must not keep drawing an axis that no longer varies.
- const axis:XAxis=depths.length>1?xAxis:'concurrency';
+ const axis:XAxis=depths.length<=1?'concurrency':xAxis??defaultXAxis(depths.length,concurrencyVaries);
  const own=useMemo(()=>{
   const all=summaries(run).filter(r=>r.testId===chosen);
   // Depth goes into the series name only when it is not the axis. Doing both would split each
