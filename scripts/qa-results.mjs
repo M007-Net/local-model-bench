@@ -6,7 +6,7 @@ const root=process.cwd();fs.mkdirSync('work/qa-results',{recursive:true});
 const app=await electron.launch({...(process.env.LMB_QA_EXE?{executablePath:process.env.LMB_QA_EXE}:{}),args:process.env.LMB_QA_EXE?[]:[root],env:{...process.env,LMB_DATA_DIR:path.join(root,process.env.LMB_QA_EXE?'work/qa-installed/data':'work/qa-results/data')},timeout:60000});
 const page=await app.firstWindow();page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
- await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ await page.getByRole('heading',{name:'Choose models to benchmark'}).waitFor();
  await page.getByText('LM Studio connected',{exact:true}).waitFor({timeout:20000});
  const modelKey=process.env.LMB_MODEL_KEY;if(!modelKey)throw Error('Set LMB_MODEL_KEY to an exact downloaded model key.');
  const model=page.locator('.model-card').filter({has:page.locator('.model-key',{hasText:modelKey})});await model.click();

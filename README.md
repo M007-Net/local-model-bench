@@ -30,6 +30,8 @@ AI provider.
 - [Step 3: Read the results](#step-3-read-the-results)
 - [If something looks wrong](#if-something-looks-wrong)
 - [Build from source](#build-from-source) — only if you want to compile it yourself
+- [Choose the engine, and compare engines](#choose-the-engine-and-compare-engines-1100) — which llama.cpp build, and setting two side by side
+- [Quantize the context](#quantize-the-context-1100) — the memory that grows with concurrency
 
 Everything after that is reference material. You do not need it to get going.
 
@@ -61,7 +63,7 @@ account, and nothing here needs Python or a terminal.
 
 1. Go to the
    [Releases page](https://github.com/M007-Net/local-model-bench/releases) and
-   download the file named `Local-Model-Bench-Setup-1.8.0.exe`.
+   download the file named `Local-Model-Bench-Setup-1.9.0.exe`.
 
    > If that page is empty or you cannot open it, no release has been published
    > yet. Until one is, the only way to get the app is
@@ -73,7 +75,7 @@ account, and nothing here needs Python or a terminal.
    Right-click the Start button, choose **Terminal**, and paste this in:
 
    ```powershell
-   Get-FileHash -Algorithm SHA256 "$HOME\Downloads\Local-Model-Bench-Setup-1.8.0.exe"
+   Get-FileHash -Algorithm SHA256 "$HOME\Downloads\Local-Model-Bench-Setup-1.9.0.exe"
    ```
 
    It prints a long string of letters and numbers. It must match the one listed on
@@ -167,8 +169,8 @@ There is no built-in model list or model-family allowlist. The app discovers eve
 The current backend is **LM Studio native v1**, with its CLI used to load models and verify context and parallel settings. This is a Windows desktop app, not a universal API client: Ollama, cloud providers, embeddings, image generation, and standalone Hugging Face checkpoints are not implemented backends. Vision-capable language models can take the text tests; these benchmarks do not send images.
 
 - **Reasoning:** the menu shows the intersection of settings reported by the selected models. Model default sends no explicit reasoning setting and works with models that expose no reasoning control. Unsupported selections are blocked, not silently changed.
-- **Native MTP:** optional and never inferred from a model name. On requires confirmed metadata for the exact model file and verified loaded settings. It currently uses LM Studio's local GGUF metadata cache; missing or stale metadata leaves support unknown. MTP requires an LM Studio/CLI runtime exposing the MTP flags and effective settings. Older runtimes may need an update even for a controlled MTP-off run.
-- **Vision mode:** `Auto` leaves LM Studio's defaults alone, `Off / text-only` sends no image, and `On` runs a deterministic local image smoke test alongside your text tests. `On` is offered only for models LM Studio positively reports as vision-capable; an unknown capability is never treated as support, and a run stops before measuring anything if the loaded model does not confirm it. LM Studio has **no** load-time option to attach or detach a vision projector — the projector belongs to the model entry itself (an `mmproj` file stored beside the GGUF), so text-only means no image is sent and never claims vision weights were unloaded. A vision-capable model stays fully usable for ordinary text benchmarks, so a separate non-vision copy of the same model is not needed. Benchmark images are generated locally and sent as base64 data URLs. This app refuses any image that is not a local `data:image/` URL, so no image request ever leaves the machine.
+- **Native MTP:** optional and never inferred from a model name, and covering both prediction heads built into a model file and heads shipped as a separate file with it. Several prediction depths can be measured in one run; see [Find the best MTP setting](#find-the-best-mtp-setting-190). On requires confirmed metadata for the exact model file and verified loaded settings. It currently uses LM Studio's local GGUF metadata cache; missing or stale metadata leaves support unknown. MTP requires an LM Studio/CLI runtime exposing the MTP flags and effective settings. Older runtimes may need an update even for a controlled MTP-off run.
+- **Vision mode:** `Auto` leaves LM Studio's defaults alone, `Off / text-only` sends no image, and `On` runs a deterministic local image smoke test alongside your text tests. `On` is offered only for models LM Studio positively reports as vision-capable; an unknown capability is never treated as support, and a run stops before measuring anything if the loaded model does not confirm it. LM Studio has **no** load-time option to attach or detach a vision projector — the projector belongs to the model entry itself (an `mmproj` file stored beside the GGUF), so text-only means no image is sent and never claims vision weights were unloaded. A vision-capable model stays fully usable for ordinary text benchmarks. When you want to measure the same weights with the projector left out entirely, see [Benchmark a vision model without its projector](#benchmark-a-vision-model-without-its-projector). Benchmark images are generated locally and sent as base64 data URLs. This app refuses any image that is not a local `data:image/` URL, so no image request ever leaves the machine.
 - **Context and concurrency:** the app checks advertised context limits when available, then verifies actual loaded settings. Hardware limits or unsupported load options produce an explicit error rather than silently changing the experiment.
 - **Missing metadata:** models remain usable; unknown size, quantization, and capabilities are not invented. Display-only architecture/size hints can be corrected in Results and never determine whether a model may run.
 
@@ -207,6 +209,191 @@ Search by model name, key, quantization, publisher, architecture, or format. Com
 **Sort by** supports name A–Z or Z–A, vision first, quantization A–Z, smallest or largest file size, largest context, and loaded first. Unknown numeric values sort last. The library remembers your view between app launches; **Reset view** clears its filters and restores name sorting.
 
 **Select shown** and **Deselect shown** apply only to visible cards. Hidden selections are preserved and counted above the library. **Clear selection** removes all selections. Cards identify vision support directly.
+
+## Benchmark a vision model without its projector
+
+Some models keep a vision projector (an `mmproj-*.gguf`) in the same folder as
+their weights. Gemma 4 does. LM Studio attaches that projector whenever it loads
+the model, and there is no way to ask it not to: its whole projector handling is
+two lines that read the path off the model entry LM Studio indexed, with no flag,
+no API field and no setting in front of them. **Vision off** in a run therefore
+means "no image was sent", never "the projector was left out" — the weights are
+still loaded and still taking VRAM.
+
+The only thing that changes it is giving LM Studio a *second entry* to index, with
+the same weights and no projector. That is what the **Vision projectors** panel on
+the Models screen does. **Make text-only copy** creates a folder beside the
+model's own named `… - Text only`, containing:
+
+- a hard link to the model's weights — not a copy. It is the same bytes on disk
+  and uses no extra space;
+- a hard link to any MTP head stored with the model, at the same relative place,
+  so the text-only copy keeps native MTP;
+- no projector.
+
+LM Studio picks the folder up on its own and lists it as a separate model whose
+vision capability is `false`. Refresh the library and it appears beside the
+original, so you can select either.
+
+**Remove copy** deletes the folder. Because every file in it is a link, that frees
+no space and destroys nothing: the weights stay where they were. Removal refuses
+outright if the folder holds any file that exists nowhere else, and it will only
+delete folders this app made, identified by a marker file rather than by name.
+
+Hard links need the model folder to be on a single NTFS volume, which a sibling
+folder inside the same models directory always is. On anything else the copy is
+refused with a reason rather than silently duplicating many gigabytes.
+
+## Find the best MTP setting (1.9.0)
+
+Native MTP lets a model draft several tokens ahead with its own prediction heads,
+and the main model then checks that draft. Drafting further ahead can be faster —
+or slower, once too many drafted tokens get thrown away. The right number is a
+property of the model and your hardware, so the only way to know it is to measure.
+
+The quickest way in is the **MTP speed sweep** button on the **Run** screen. It
+switches the run to speed only, turns MTP on, and sets the depths to
+`0, 1, 2, 3, 4, 5` — every draft depth from 1 to 5, measured against MTP off.
+
+To set it up by hand instead, turn on **Enable native MTP** and tick **Sweep
+maximum predictions**. **Depth 0 means MTP off**, so the sweep includes the
+baseline that any speed-up has to beat.
+
+Depth is fixed when a model is loaded, so **each depth is a separate load and a
+separate pass over your whole workload**. Six depths is six times the run. The
+run preview says so, and shows the total before you start. Start small: one test,
+concurrency 1, two waves, three depths.
+
+Concurrency and depth are swept together. Give the run more than one
+**Concurrent requests** level and every level is measured at every depth and
+reported on its own: five depths at five concurrency levels is 25 combinations per
+model. A depth is only ever compared with another depth under the same load,
+because the depth that is fastest at one request at a time need not be the fastest
+with five in flight.
+
+Results gain a **Maximum predictions sweep** panel, one block per model and one
+table per concurrency level:
+
+- a row per depth with generation speed, total throughput, latency, time to first
+  token and objective score;
+- **draft accepted**, the share of drafted tokens the main model kept, and **mean
+  accepted run**, how many it kept per drafting step. Both are LM Studio's own
+  figures, printed by its engine as each request finishes and pooled over the wave
+  by drafted tokens. MTP off reports neither, because nothing was drafted — which
+  is not the same as drafting that was always rejected;
+- the spread of the measurements behind each speed;
+- a plain sentence naming the fastest depth and what it gained over the baseline.
+
+When the gap between two depths is no bigger than the spread of the measurements
+themselves, the panel says so instead of declaring a winner. Add waves and run it
+again rather than acting on that. The spread assumes requests are independent,
+which requests sharing a concurrent wave are not, so treat it as a floor on the
+real uncertainty.
+
+Every response records the depth it was measured at. Graphs draw one line per
+model **and** depth, the comparison table and CSV keep `mtpDepth`, `draftAcceptance` and `draftMeanLen` columns, and
+the run history overview will not pool two depths into one row.
+
+Sweeping needs confirmed MTP support for every selected model — the same
+requirement as turning MTP on at all, checked before anything is loaded. If LM
+Studio does not apply a depth it was asked for, that depth is abandoned without
+measuring anything, and the rest of the sweep continues.
+
+**Check the MTP head loads first** (optional) goes one step further. Confirmed
+support means LM Studio's metadata says the heads exist and match; it does not
+mean its runtime can actually load them against that exact model file. Tick this
+and every selected model is loaded once with MTP on — at the same parallel slots
+and context the run itself will use — before anything is measured. A model whose
+head will not load is named in the run log and its MTP depths are skipped; the
+rest of that model's sweep, including the MTP-off baseline, still runs.
+
+It is off by default because it costs one extra load per model whose head does
+load. **What it buys is when you find out, not a shorter run.** Measured on a
+two-model, two-depth sweep where the second model's head will not load: the run
+said so at 25 seconds with the check on and at 82 seconds without it, and the
+measurements were identical either way. The whole run was 93 seconds with the
+check and 82 seconds without — the check made it slightly *longer*, because the
+model whose head did load paid for an extra load and there was only one depth to
+skip. On a real workload that gap inverts: the depth that cannot load is found
+before the baseline is measured rather than after, so you can stop instead of
+waiting out a comparison that has nothing to compare against. Sweeps with several
+drafting depths also fail once here instead of once per depth.
+
+### Models whose prediction heads are a separate file
+
+Some models keep their MTP heads inside the model file; others ship them as their
+own file stored with the model, which LM Studio indexes separately. Gemma 4 does
+the second, Qwen3.8 the first. Both count as native MTP here, and a model card
+says which one it has.
+
+The difference matters because LM Studio offers no command-line switch for the
+separate kind and no field for it in its HTTP API — its own window is the only
+place the setting exists. So for those models this app writes the setting into
+LM Studio's own per-model configuration immediately before a load and restores
+that file, byte for byte, immediately after, whether the load worked or not. A
+file it had to create is deleted again. Nothing is left behind for LM Studio to
+apply to a load this app did not make.
+
+Because LM Studio never reports that head back through its API, the load is
+confirmed against its engine log instead: the log has to name that exact head
+file, or nothing is measured at that depth. The MTP-off baseline is checked the
+same way in reverse — if a head was loaded for it, the depth is abandoned rather
+than used as a baseline it is not.
+
+If two heads in a model's folder both fit it, support is reported as unknown and
+the card names both. Removing the duplicate in LM Studio is the fix; this app
+will not pick one for you.
+
+## Choose the engine, and compare engines (1.10.0)
+
+LM Studio ships several llama.cpp builds — a Vulkan one, a ROCm one on AMD, a CUDA
+one on NVIDIA — and uses whichever is selected when a model loads. There is no
+per-load switch, so until now which build produced a set of numbers was not recorded
+anywhere and could not be recovered afterwards.
+
+**Inference engine** on the Run screen names one. It is selected before the first
+load and your previous choice is put back when the run ends, whatever happens to the
+run. Leave it on *Whatever LM Studio has selected* and nothing changes.
+
+The difference can be large and is worth measuring rather than assuming. On an
+RX 9070 with Gemma 4 12B Q4_K_XL:
+
+| | Vulkan 2.40.0 | ROCm 2.40.0 |
+| --- | --- | --- |
+| Prompt processing | 1027 tok/s | 148 tok/s |
+| Fixed cost before the first token | none measurable | about 16 s |
+| Generation | 61 tok/s | 51 tok/s |
+
+Once two engines have measured the same model, **Results** offers *Show ROCm*,
+*Show Vulkan* or *Show all engines* above the tables, and the comparison table gains
+an engine column. The graphs gain a **Compare with** menu in the corner listing other
+engines and other models; each becomes its own line. Nothing is recalculated — every
+overlaid point is a saved row from a finished run, newest run per measurement — and
+the other conditions of those runs are whatever they were, so read the engine column
+together with the rest of the row. The engine is also a filter and a grouping on the
+all-runs overview.
+
+## Quantize the context (1.10.0)
+
+The key/value cache is the part of a run's memory that grows with concurrency rather
+than with the weights: an instance is loaded holding context × parallel slots of it.
+On a card where the weights already nearly fill VRAM, that is usually what decides
+whether a run measures the GPU or measures a spill into system RAM.
+
+**Quantize the context (KV cache)** sets the K and V caches independently to q8_0,
+q5_0, q4_0, iq4_nl or f16. K tolerates quantization less well than V, so q8_0 for K
+with something smaller for V is the usual choice. It needs flash attention, which
+LM Studio turns on by default.
+
+LM Studio exposes no command-line flag for this, so the setting is written into its
+own per-model configuration for the length of one load and the file is put back byte
+for byte immediately afterwards — the same discipline the separate MTP head uses.
+Nothing is left behind to change a load you make from LM Studio's own window later.
+
+It is not free: measured on Gemma 4 12B Q4_K_XL, q8_0 for both cost about 9% of
+prompt processing (569 tok/s to 519 tok/s). Quantizing the cache also changes what
+the model attends to, so treat quality scores from a quantized-cache run as measured
+under that setting rather than as comparable to an f16 run.
 
 ## Understanding the measurements
 
@@ -297,7 +484,7 @@ optional LM Studio API token is encrypted at rest and is never sent to the
 renderer: the window is told only whether one is configured. Inference scheduling
 runs in a worker thread.
 
-As of 1.8.0 the suite is 164 tests, covering streaming fragments, timing math,
+As of 1.9.0 the suite is 199 tests, covering streaming fragments, timing math,
 concurrency, scoring, cancellation, loading errors, retries, SQLite recovery, the
 pooling and facet rules behind the run history overview, the update check's
 version, asset, host and checksum rules, the question-file reader and the scoring rules an imported pack
@@ -313,7 +500,7 @@ Because it is unsigned, check the installer's SHA-256 against the value publishe
 with the release before running it:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 '.\Local-Model-Bench-Setup-1.8.0.exe'
+Get-FileHash -Algorithm SHA256 '.\Local-Model-Bench-Setup-1.9.0.exe'
 ```
 
 If the hash does not match what the release page lists, do not run it.
@@ -381,6 +568,14 @@ npx tsx scripts/verify-accounting-mtp.ts work/accounting-live
 $env:LMB_VISION = "on"
 npx tsx scripts/live-vision.ts
 ```
+
+One UI script needs neither LM Studio nor a model, because it drives the window against saved data:
+
+```powershell
+node scripts/qa-mtp-sweep.mjs
+```
+
+It checks the sweep controls and the sweep panel, graphs and export. Its results half labels a saved run's real measurements with MTP depths so the depth-aware screens have something to draw; those labels are the script's invention, so nothing it prints is a statement about MTP speed. It writes only to `work/`.
 
 No live script automatically chooses a large model or downloads weights. Timing and resource use depend on your selected model and hardware. Some historical UI QA scripts require saved fixture runs; `npm test` is the reproducible core check.
 

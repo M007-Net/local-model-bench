@@ -7,11 +7,12 @@ import {percentile} from '../electron/metrics';
 import type {Metrics,Run,Sample} from '../src/types';
 const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({
  vision:'off',visionEffective:'',visionImagesSent:false,visionProjectorUnloaded:false,visionLimitation:'',
- mtp:'off',mtpDraftTokens:null,model:'Gemma 4 12B',modelKey:'gemma-4-12b-it@iq3_xxs',test:'Short prompt throughput',testId:'perf-short',concurrency:1,
+ mtp:'off',mtpDraftTokens:null,mtpDepth:null,draftAcceptance:null,draftMeanLen:null,model:'Gemma 4 12B',modelKey:'gemma-4-12b-it@iq3_xxs',test:'Short prompt throughput',testId:'perf-short',concurrency:1,
  requests:1,failures:0,failureRate:0,generationTps:null,estimatedPrefillTps:null,throughput:null,
  medianMs:null,p95Ms:null,ttftMs:null,objective:null,localJudge:null,externalJudge:null,
  gpuHotSpotAvg:null,gpuHotSpotMax:null,gpuCoreTempAvg:null,gpuCoreTempMax:null,gpuMemoryTempMax:null,
  gpuPowerAvg:null,gpuLoadAvg:null,gpuReadings:0,
+ backend:'Vulkan',backendRef:'llama.cpp-win-x86_64-vulkan-avx2@2.40.0',prefillCalibratedTps:null,prefillOverheadMs:null,
  runId:'r1',runName:'Run one',runCreated:'2026-09-01T00:00:00.000Z',runStatus:'completed',
  family:'Gemma',kind:'dense',sizeLabel:'12B',sizeBucket:'8-20B',quantization:'IQ3_XXS',quantTier:'IQ3',
  publisher:'unsloth',architecture:'gemma4',totalB:12,activeB:null,

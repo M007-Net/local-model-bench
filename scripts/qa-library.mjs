@@ -6,7 +6,7 @@ const root=process.cwd();fs.mkdirSync('work/library-qa',{recursive:true});
 const app=await electron.launch({...(process.env.LMB_QA_EXE?{executablePath:process.env.LMB_QA_EXE}:{}),args:process.env.LMB_QA_EXE?[]:[root],env:{...process.env,LMB_DATA_DIR:path.join(root,'work/library-qa/data')},timeout:60000});
 const page=await app.firstWindow();page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
- await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ await page.getByRole('heading',{name:'Choose models to benchmark'}).waitFor();
  let models;try{models=await page.evaluate(()=>window.bench.models());}catch{await page.evaluate(()=>window.bench.startServer());models=await page.evaluate(()=>window.bench.models());await page.getByRole('button',{name:'Refresh models',exact:true}).click();}
  assert.ok(models.length>0);
  await page.getByRole('button',{name:'Reset view',exact:true}).click();

@@ -1,6 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {Plus,Trash2,Upload,X} from 'lucide-react';
 import type {Run,RunSummary} from './types';
+import {mtpDepthLabel} from './mtp-sweep';
 import {benchmarkRows,interpretScore,sameBenchmarkQuestions,scoreBands,summaryFor,type BenchmarkSelection,type PackSummary} from './benchmarks';
 import {defaultInstruction,scoringModes,type PackDraft,type PackPreview,type ScoringMode} from './benchmark-import';
 import {useModalDialog} from './dialog';
@@ -49,7 +50,7 @@ function PackImport({onClose,onDone}:{onClose:()=>void;onDone:(summary:PackSumma
   <div className="modal-footer"><button onClick={onClose}>Cancel</button><button className="primary" disabled={!!busy||!preview||!draft.name.trim()} onClick={()=>run('save',async()=>onDone(await window.bench.importPack(draft)))}>{busy==='save'?'Importing…':'Import pack'}</button></div>
  </section></div>;
 }
-const settings=(r:Run)=>`MTP ${r.config.mtp??'default'} · reasoning ${r.config.reasoning} · temperature ${r.config.temperature} · context ${r.config.contextLength} · output ${r.config.maxTokens} · waves ${r.config.waves}`;
+const settings=(r:Run)=>`MTP ${r.config.mtp??'default'}${r.config.mtpSweep?.length?' · swept '+r.config.mtpSweep.map(d=>mtpDepthLabel(d)).join(', '):r.config.mtp==='on'?' · '+(r.config.mtpDraftTokens??2)+' draft tokens':''} · reasoning ${r.config.reasoning} · temperature ${r.config.temperature} · context ${r.config.contextLength} · output ${r.config.maxTokens} · waves ${r.config.waves}`;
 export function BenchmarkResults({run,savedRuns,packs}:{run:Run;savedRuns:RunSummary[];packs:PackSummary[]}){
  const [score,setScore]=useState<number|null>(null),[compareId,setCompareId]=useState(''),[other,setOther]=useState<Run|null>(null),[error,setError]=useState('');
  useEffect(()=>{setScore(null);setCompareId('');setOther(null);},[run.id]);
@@ -57,6 +58,6 @@ export function BenchmarkResults({run,savedRuns,packs}:{run:Run;savedRuns:RunSum
  const id=run.tests.find(t=>t.benchmark)?.benchmark?.packId;if(!id)return null;
  const pack=summaryFor(id,packs);
  const matching=other&&sameBenchmarkQuestions(run,other);
- const renderRows=(r:Run)=><div className="test-grid">{benchmarkRows(r).map(row=><button className="panel benchmark-card" key={row.key+'|'+row.concurrency} onClick={()=>setScore(row.score)}><h3>{row.key}</h3><p>Concurrency {row.concurrency}</p><strong className="benchmark-score">{row.score===null?'—':row.score.toFixed(1)} / 100</strong><p>{row.passed} passed / {row.attempted} attempted · {row.expected} planned</p><p>{row.uniqueQuestions} distinct questions · {row.failed} request failures · {row.truncated} output limits reached</p><b>{row.provisional?'Provisional · run incomplete':'Completed run'}</b><p>Click for benchmark meaning →</p></button>)}</div>;
+ const renderRows=(r:Run)=><div className="test-grid">{benchmarkRows(r).map(row=><button className="panel benchmark-card" key={row.key+'|'+row.depth+'|'+row.concurrency} onClick={()=>setScore(row.score)}><h3>{row.key}</h3><p>Concurrency {row.concurrency}{row.depth===null?'':' · '+row.mtp}</p><strong className="benchmark-score">{row.score===null?'—':row.score.toFixed(1)} / 100</strong><p>{row.passed} passed / {row.attempted} attempted · {row.expected} planned</p><p>{row.uniqueQuestions} distinct questions · {row.failed} request failures · {row.truncated} output limits reached</p><b>{row.provisional?'Provisional · run incomplete':'Completed run'}</b><p>Click for benchmark meaning →</p></button>)}</div>;
  return <div className="benchmark-layout"><section><section className="panel"><h2>{pack.name} scores</h2><p>{settings(run)}</p><p>Score = passed responses ÷ attempted responses. A response must pass every check. Request failures count as misses; warm-ups are excluded. Repeated waves and concurrent copies are repeated attempts, not new questions.</p>{renderRows(run)}<label className="field"><span>Compare with a saved benchmark run</span><select value={compareId} onChange={e=>setCompareId(e.target.value)}><option value="">Choose a run</option>{savedRuns.filter(r=>r.id!==run.id&&r.config.benchmark).map(r=><option key={r.id} value={r.id}>{r.config.name} · MTP {r.config.mtp??'default'} · {r.created}</option>)}</select></label>{error&&<p role="alert">{error}</p>}{other&&<><h3>{other.config.name}</h3><p>{settings(other)}</p>{matching?<p>Same questions and scoring protocol. Check the settings above before attributing a difference to the model.</p>:<p className="banner error">Different questions or scoring protocol. These scores are not a controlled comparison.</p>}{matching&&renderRows(other)}</>}</section></section><Meaning pack={pack} score={score}/></div>;
 }

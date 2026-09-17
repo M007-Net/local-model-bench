@@ -1,5 +1,6 @@
 import data from './benchmark-data/packs.json';
 import type {Run, RunConfig, TestCase} from './types';
+import {mtpDepthText,sweepSteps} from './mtp-sweep';
 
 export type BenchmarkSelection={packId:string;count:number;seed:number};
 export type BenchmarkMeta={packId:string;itemId:string;datasetHash:string;protocol:string};
@@ -70,14 +71,18 @@ export function interpretScore(score:number|null){return score===null||!Number.i
 export function benchmarkRows(run:Run){
  const tests=run.tests.filter(t=>t.benchmark),ids=new Set(tests.map(t=>t.id));
  if(!tests.length)return [];
- return run.config.modelKeys.flatMap(key=>run.config.concurrency.map(concurrency=>{
-  const samples=run.samples.filter(s=>!s.warmup&&s.modelKey===key&&s.concurrency===concurrency&&ids.has(s.testId));
+ // An MTP sweep runs the whole pack once per prediction depth, so a depth is a separate score
+ // with its own expected question count. Runs that did not sweep have a single depth of null,
+ // which matches every response and leaves their rows exactly as they were.
+ const depths=sweepSteps(run.config).map(s=>s.depth);
+ return run.config.modelKeys.flatMap(key=>depths.flatMap(depth=>run.config.concurrency.map(concurrency=>{
+  const samples=run.samples.filter(s=>!s.warmup&&s.modelKey===key&&s.concurrency===concurrency&&ids.has(s.testId)&&(depth===null||s.mtpTokens===depth));
   const passed=samples.filter(s=>s.status==='completed'&&s.objective.score===100).length;
   const failed=samples.filter(s=>s.status!=='completed').length;
   const expected=tests.length*run.config.waves*concurrency;
   const score=samples.length?passed/samples.length*100:null;
-  return {key,concurrency,passed,attempted:samples.length,expected,failed,score,provisional:samples.length!==expected||run.status!=='completed',truncated:samples.filter(s=>s.possibleTruncation).length,uniqueQuestions:new Set(samples.map(s=>s.testId)).size};
- }));
+  return {key,concurrency,depth,mtp:mtpDepthText(depth),passed,attempted:samples.length,expected,failed,score,provisional:samples.length!==expected||run.status!=='completed',truncated:samples.filter(s=>s.possibleTruncation).length,uniqueQuestions:new Set(samples.map(s=>s.testId)).size};
+ })));
 }
 export function sameBenchmarkQuestions(a:Run,b:Run){
  const signature=(r:Run)=>JSON.stringify(r.tests.filter(t=>t.benchmark).map(t=>[t.id,t.benchmark?.datasetHash,t.benchmark?.protocol,t.prompt,t.rules]).sort((x,y)=>String(x[0]).localeCompare(String(y[0]))));

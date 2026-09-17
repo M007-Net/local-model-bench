@@ -22,7 +22,7 @@ const columns:{key:SortKey;label:string}[]=[
  {key:'generationTps',label:'Gen tok/s'},{key:'estimatedPrefillTps',label:'Prefill est.'},{key:'throughput',label:'Total tok/s'},
  {key:'medianMs',label:'Median / p95'},{key:'failureRate',label:'Failures'},
  {key:'objective',label:'Objective'},{key:'localJudge',label:'Local judge'},{key:'gpuHotSpotMax',label:'GPU hot spot'}];
-const conditionText=(g:HistoryGroup)=>[`concurrency ${g.conditions.concurrency.join(', ')||'—'}`,g.conditions.promptSizes.join(', '),`MTP ${g.conditions.mtp.join(' / ')||'—'}`,`reasoning ${g.conditions.reasoning.join(' / ')||'—'}`].filter(Boolean).join(' · ');
+const conditionText=(g:HistoryGroup)=>[`concurrency ${g.conditions.concurrency.join(', ')||'—'}`,g.conditions.promptSizes.join(', '),`MTP ${g.conditions.mtpDepth.join(' / ')||'—'}`,`reasoning ${g.conditions.reasoning.join(' / ')||'—'}`].filter(Boolean).join(' · ');
 export function HistoryPanel({view,onChange,onOpenRun,signature}:{view:HistoryView;onChange:(v:HistoryView)=>void;onOpenRun:(id:string)=>void;signature:string}){
  const [rows,setRows]=useState<HistoryRow[]|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
  const [score,setScore]=useState<ScoreSource>('objective'),[open,setOpen]=useState('');

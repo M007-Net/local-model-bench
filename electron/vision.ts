@@ -11,12 +11,22 @@ import type {Model} from '../src/types';
 //    flash_attention and the speculative_draft_* family used for native MTP.
 //  * A loaded instance's returned config carries no vision or projector field at all,
 //    so unlike MTP there is nothing to read back that could confirm a projector state.
-// Vision is fixed when LM Studio indexes a model: a base GGUF is vision-capable exactly
-// when an mmproj-*.gguf sits beside it in the same folder, and LM Studio surfaces that
+// Re-checked on 2026-09-15, this time against LM Studio's own load-config schema rather than
+// only its CLI and HTTP API, because that schema turned out to carry MTP settings the other
+// two do not expose (see mtp-sidecar.ts). It carries nothing for vision either: the whole of
+// LM Studio's projector handling is
+//     const visionPath = indexedModel.visionAdapter?.absPath;
+//     if (visionPath !== undefined) loadParams.mmproj_path = visionPath;
+// read straight off the index entry, with no condition and no setting in front of it.
+// Vision is therefore fixed when LM Studio indexes a model: a base GGUF is vision-capable
+// exactly when an mmproj-*.gguf sits beside it in the same folder, and LM Studio surfaces that
 // pairing as its own model key whose capabilities.vision is true. The same GGUF bytes
 // indexed without a neighbouring mmproj report capabilities.vision false. A projector
 // therefore cannot be attached or detached at load time, and text-only can only ever
 // mean "send no image" — never "the vision weights were unloaded".
+// What that last sentence leaves open is measuring the same weights with no projector at all,
+// which needs a second entry for LM Studio to index rather than a different load. text-only.ts
+// makes one out of hard links.
 export const projectorToggle=false;
 export const noProjectorToggleNote='LM Studio has no load-time option to attach or detach a vision projector. The projector belongs to the model entry itself (an mmproj file stored beside the GGUF), so text-only means no image is sent with any request; it does not unload vision weights.';
 

@@ -32,7 +32,7 @@ store.saveRun(run);for(const s of samples)store.saveSample(s);store.close();
 const app=await electron.launch({args:[root],env:{...process.env,LMB_DATA_DIR:dataDir},timeout:60000});
 const page=await app.firstWindow();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
 try{
- await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ await page.getByRole('heading',{name:'Choose models to benchmark'}).waitFor();
  await page.locator('nav').getByRole('button',{name:'Results',exact:true}).click();
  await page.getByLabel('Saved run').selectOption(runId);
  await page.getByRole('heading',{name:'GPU thermals'}).waitFor();

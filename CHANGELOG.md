@@ -6,6 +6,168 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.10.0 — 2026-09-17
+
+### Added
+
+- **Choose which llama.cpp build a run uses.** LM Studio keeps one selected engine
+  at a time and has no per-load switch, so which build produced a set of numbers was
+  not recorded anywhere and could not be recovered afterwards. A run can now name an
+  engine; it is selected before the first load and the previous choice is put back
+  when the run ends, whatever happens to the run. On an RX 9070 the difference is not
+  subtle: measured on Gemma 4 12B Q4_K_XL, Vulkan 2.40.0 reached 1027 tok/s of prompt
+  processing against ROCm 2.40.0's 148 tok/s, and ROCm carried roughly 16 s of fixed
+  cost before its first token at every prompt size tested.
+- **Quantize the context.** The key/value cache is the part of a run's memory that
+  grows with concurrency rather than with the weights: an instance holds context ×
+  parallel slots of it. K and V can now be set independently to q8_0, q5_0, q4_0,
+  iq4_nl or f16. LM Studio exposes no flag for this, so the setting is written to its
+  own per-model configuration for the length of one load and the file is put back
+  byte for byte afterwards, the same discipline the MTP head already used. Measured
+  cost on Gemma 4 12B Q4_K_XL: q8_0 for both cost about 9% of prompt processing
+  (569 tok/s to 519 tok/s).
+- **Results read one question at a time.** The comparison table is offered under
+  three headings — all measurements, prompt processing, and token generation — each
+  carrying the columns that bear on that question. Generation gains total throughput
+  beside the per-request rate, the MTP depth, drafted-token acceptance, and what each
+  extra concurrent user costs every other one.
+- **Set another engine's numbers beside this run's.** Where saved runs measured the
+  same models on a different engine, the results screen offers Show ROCm, Show Vulkan
+  or Show all engines, and the table gains an engine column. The graphs gain a
+  Compare with menu listing other engines and other models, drawn as their own lines.
+  Nothing is recalculated: every overlaid point is a saved row, newest run per
+  measurement. The engine is also a filter and a grouping in the history overview.
+
+### Fixed
+
+- **Prompt processing was reported at roughly a third of its real speed.** The figure
+  came from LM Studio's prompt_processing interval, which in practice lands within a
+  millisecond or two of time-to-first-token, so it carried the whole fixed cost of a
+  request — HTTP, tokenization, scheduling, the first sampling step — on top of the
+  prefill. At the prompt sizes the performance tests use, that fixed cost *was* the
+  measurement. No single request can separate a fixed cost from a per-token one, so
+  each loaded model is now measured twice, over a short prompt and a long one; the
+  fixed cost is identical in both and cancels, leaving the real per-token rate and
+  naming the overhead that was being charged to the GPU. The older per-request figure
+  is kept beside it rather than silently replaced.
+- **A load that ran out of room named none of the settings that caused it.** LM Studio
+  reports it in its own words, which never mention context, concurrency or the cache.
+  Failures that look like memory now carry the arithmetic the run already did — the
+  tokens actually asked for, the weights, LM Studio's own estimate — and the three
+  settings that change it.
+
+## 1.9.0 — 2026-09-15
+
+### Added
+
+- **An optional preflight for the MTP head.** LM Studio's metadata confirming that
+  a model's prediction heads exist and match does not mean its runtime can load
+  them against that exact file. **Check the MTP head loads first** on the Run
+  screen loads each selected model once with MTP on, at the run's own parallel
+  slots and context, before anything is measured. A model whose head will not load
+  is named and its MTP depths are skipped; its MTP-off baseline still runs. Off by
+  default: it costs one extra load per model whose head does load, and what it buys
+  is finding out early rather than a shorter run. Measured on a two-model, two-depth
+  sweep against a head that will not load: reported at 25 s with the check and 82 s
+  without, with identical measurements either way.
+
+### Fixed
+
+- **A failed `lms` command was unreadable.** The CLI draws an animated progress bar,
+  and on failure the whole stream — cursor codes, colour codes and one repaint frame
+  per percent — became the error message. Saved run logs held up to 11,195 characters
+  for a single failure, with LM Studio's own one-line cause buried inside. The
+  progress frames and escape codes are now stripped and the duplicated failure block
+  collapsed, turning that example into 353 readable characters.
+- **A run that lost one model said only how many things failed.** The summary now
+  names each model and depth that went unmeasured, and states that everything else
+  in the run was measured and saved.
+- **Native MTP for models whose prediction heads are a separate file.** LM Studio
+  ships MTP two ways: heads built into the model's own GGUF, and heads stored with
+  it as their own file that LM Studio indexes separately. Only the first had a
+  command-line switch, so Gemma 4 — which ships the second kind — was reported as
+  having no native MTP at all and could not be benchmarked with it. A model is now
+  paired with a head in its own folder by structure alone: prediction layers
+  declared, output width equal to that model's hidden size, and that model's
+  architecture under LM Studio's "-assistant" suffix. Two heads that both fit are
+  reported as ambiguous rather than guessed between.
+- **Loading a separate head.** LM Studio exposes the setting in neither its CLI nor
+  its HTTP API, so it is written into LM Studio's own per-model configuration for
+  the length of one load and that file is restored byte for byte immediately after,
+  whether the load succeeded or failed; a file this app created is deleted again
+  along with any folders it had to make.
+- **Confirming a separate head.** LM Studio reports nothing about one through its
+  API, so a load is confirmed against its engine log, which has to name that exact
+  head file before anything is measured. A sweep's MTP-off baseline is checked the
+  same way in reverse: a head loaded for the baseline abandons that depth rather
+  than letting every other depth be compared against a speculative run.
+- **Text-only copies of vision models.** A vision projector belongs to the model entry
+  LM Studio indexed, not to the load: its whole projector handling reads `mmproj_path`
+  straight off that entry, with no flag, no API field and no load-config key in front of
+  it. So Vision off could only ever mean "no image was sent", never "the projector was
+  left out" — and a model like Gemma 4, whose projector sits in its own folder, could not
+  be measured without it. The Models screen gains a **Vision projectors** panel that makes
+  a second, projector-free entry for LM Studio to index: a sibling folder of hard links to
+  the same weights, with the projector left out and any MTP head linked in so the copy
+  keeps native MTP. Nothing is duplicated — the copy shares the original's bytes and uses
+  no extra disk space — and removing it deletes links only, refusing outright if the folder
+  holds any file that exists nowhere else.
+- **Accepted-draft rate.** Every wave run with MTP on now records how much of the drafting
+  the main model actually kept: the share of drafted tokens accepted, and the mean accepted
+  run per drafting step. LM Studio publishes neither through its API, so both are read from
+  the per-request lines its engine prints, pooled over the wave by drafted tokens rather than
+  averaged across requests. They appear in the sweep panel, the Markdown export, and as
+  `draftAcceptance` and `draftMeanLen` columns in CSV. MTP off reports no rate at all, which
+  is not the same as a rate of zero.
+- **Concurrency is swept alongside depth.** A sweep could always be given several concurrency
+  levels, but the results pooled them into one row per depth. Each level is now measured and
+  reported on its own, and a depth is only ever compared with another depth under the same
+  load — the depth that is fastest at one request at a time need not be the fastest with five
+  in flight, and pooling hid exactly that.
+- **MTP speed sweep button** on the Run screen: one click sets the run to speed
+  only, turns MTP on, and sweeps depths 0 through 5 — every draft depth from 1 to 5
+  against the MTP-off baseline.
+- Model cards carry an MTP badge saying which of the two shapes a model has, or why
+  its support is unknown.
+- **Maximum predictions sweep.** With native MTP on, a run can measure several
+  prediction depths instead of one. Depth is fixed when a model is loaded, so each
+  depth is a separate load and a separate pass over the whole workload; the run
+  preview says how much larger that makes the run before it is started. Depth 0
+  means MTP off, so the sweep can include the baseline a speed-up has to beat.
+- Results gain a **Maximum predictions sweep** panel: a row per depth with speed,
+  throughput, latency, time to first token and objective score, the spread behind
+  each average, and a sentence naming the fastest depth and what it gained. A gap
+  no larger than the spread of the measurements is reported as exactly that rather
+  than as a winner, including when the baseline is the one marginally ahead.
+- Markdown exports gain a **Native MTP sweep** section, and CSV exports an
+  `mtpDepth` column.
+- The run history overview gains an **MTP depth** condition, so pooling across
+  runs separates depth 2 from depth 4 instead of merging both under "on".
+
+### Changed
+
+- Every saved response and wave records the MTP depth it was measured at. Summary
+  rows, the comparison table, the automatic graphs, benchmark pack scores and the
+  history overview are all keyed on it, so two depths are never averaged together.
+  Runs saved before this change carry no depth and are grouped exactly as before.
+- A retry re-runs each failed request at the depth it was originally measured at,
+  and does not load a depth that has nothing to retry.
+
+### Fixed
+
+- The version shown in the window was typed into the markup by hand and had stopped
+  matching the installer: 1.9.0 was packaged and installed while its own sidebar
+  still read "1.8.0". It now comes from `package.json` at build time, so the number
+  in the window and the number in the installer's name cannot disagree again.
+- A sweep announced its own baseline as "MTP MTP off" while loading and while running
+  each wave: the progress line prefixed "MTP " to a label that already began with it.
+- The Playwright QA scripts under `scripts/` waited for a window heading that was
+  renamed in 1.8.0, so every one of them timed out on its first assertion. They
+  now wait for the heading that exists.
+- `electron/validation.ts` held two literal control bytes inside a character
+  class, which made git treat the whole file as binary and its diffs unreadable.
+  They are now written as escapes. The token check behaves identically.
+
 ## 1.8.0 — 2026-09-14
 
 First version prepared for public release. Everything below is measured against

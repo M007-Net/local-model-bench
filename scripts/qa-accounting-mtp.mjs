@@ -7,7 +7,7 @@ const app=await electron.launch({executablePath:path.resolve('outputs/win-unpack
 const page=await app.firstWindow();page.setDefaultTimeout(20000);
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
- await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ await page.getByRole('heading',{name:'Choose models to benchmark'}).waitFor();
  const snapshot=await page.evaluate(()=>window.bench.snapshot());
  assert.equal(snapshot.tests.filter(t=>t.category==='Accounting').length,12);
  const models=await page.evaluate(()=>window.bench.models());

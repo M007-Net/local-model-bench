@@ -1,6 +1,7 @@
 import type {ChartRow} from './charts';
 import type {ModelProfile} from './model-profile';
 import {percentile} from '../electron/metrics';
+import {mtpDepthText,rowDepth} from './mtp-sweep';
 // One saved measurement group (model x test x concurrency) from one run, carrying the facts needed to pool
 // it with the same measurement taken in a different run. It extends the summary row the single-run screens
 // already use, so no measurement is recomputed here.
@@ -11,6 +12,12 @@ export type HistoryRow=ChartRow&{
  family:string;kind:ModelProfile['kind'];sizeLabel:string;sizeBucket:string;quantization:string;quantTier:string;
  publisher:string;architecture:string;totalB:number|null;activeB:number|null;
  promptSize:string|null;testKind:string;benchmarkPack:string|null;
+ // Which llama.cpp build produced the numbers. See electron/runtime.ts backendOf for where it
+ // comes from and why a run that cannot say reports Unknown rather than today's selection.
+ backend:string;backendRef:string|null;
+ // The calibrated prompt-processing rate for the model this row measured, copied from the run's
+ // own record so a row pooled into another screen can still report it.
+ prefillCalibratedTps:number|null;prefillOverheadMs:number|null;
  reasoning:string;temperature:number;contextLength:number;maxTokens:number;waves:number;
  completed:number;durationsMs:number[];objectiveCount:number;localJudgeCount:number;externalJudgeCount:number;
 };
@@ -54,19 +61,23 @@ export const facetValue={
  promptSizes:(r:HistoryRow)=>r.promptSize??otherPrompt,
  benchmarks:(r:HistoryRow)=>r.benchmarkPack??ownTests,
  mtp:(r:HistoryRow)=>r.mtp,
+ // The depth a measurement was taken at, so a sweep step pools with an ordinary run that used
+ // the same depth and never with one that used a different depth.
+ mtpDepth:(r:HistoryRow)=>mtpDepthText(rowDepth(r)),
  vision:(r:HistoryRow)=>r.vision,
  reasoning:(r:HistoryRow)=>r.reasoning,
  statuses:(r:HistoryRow)=>r.runStatus,
+ backends:(r:HistoryRow)=>r.backend,
 } as const;
 export type FacetKey=keyof typeof facetValue;
 export const facetKeys=Object.keys(facetValue) as FacetKey[];
-export const facetLabels:Record<FacetKey,string>={families:'Model family',kinds:'Architecture',sizes:'Parameters',quantTiers:'Quantization tier',quants:'Exact quantization',concurrency:'Concurrent requests',promptSizes:'Prompt size',benchmarks:'Benchmark pack',mtp:'Native MTP',vision:'Vision',reasoning:'Reasoning',statuses:'Run status'};
+export const facetLabels:Record<FacetKey,string>={families:'Model family',kinds:'Architecture',sizes:'Parameters',quantTiers:'Quantization tier',quants:'Exact quantization',concurrency:'Concurrent requests',promptSizes:'Prompt size',benchmarks:'Benchmark pack',mtp:'Native MTP',mtpDepth:'MTP depth',vision:'Vision',reasoning:'Reasoning',statuses:'Run status',backends:'Inference engine'};
 export const modelFacets:FacetKey[]=['families','kinds','sizes','quantTiers','quants'];
-export const conditionFacets:FacetKey[]=['benchmarks','concurrency','promptSizes','mtp','vision','reasoning','statuses'];
-export const groupOptions={model:'Model',family:'Model family',kind:'Dense vs MoE',size:'Parameters',sizeBucket:'Size range',quantTier:'Quantization tier',quantization:'Exact quantization',benchmark:'Benchmark pack'} as const;
+export const conditionFacets:FacetKey[]=['backends','benchmarks','concurrency','promptSizes','mtp','mtpDepth','vision','reasoning','statuses'];
+export const groupOptions={model:'Model',family:'Model family',kind:'Dense vs MoE',size:'Parameters',sizeBucket:'Size range',quantTier:'Quantization tier',quantization:'Exact quantization',benchmark:'Benchmark pack',backend:'Inference engine'} as const;
 export type GroupBy=keyof typeof groupOptions;
-export const groupValue:Record<GroupBy,(r:HistoryRow)=>string>={model:r=>r.modelKey,family:r=>r.family,kind:r=>kindLabel(r.kind),size:r=>r.sizeLabel,sizeBucket:r=>r.sizeBucket,quantTier:r=>r.quantTier,quantization:r=>r.quantization||unknownFacet,benchmark:r=>r.benchmarkPack??ownTests};
-export const sortOptions={label:'Name',runs:'Runs',requests:'Requests',generationTps:'Generation tok/s',estimatedPrefillTps:'Prefill tok/s',throughput:'Total tok/s',medianMs:'Median latency',p95Ms:'p95 latency',failureRate:'Failure rate',objective:'Objective score',localJudge:'Local judge',gpuHotSpotMax:'GPU hot spot peak'} as const;
+export const groupValue:Record<GroupBy,(r:HistoryRow)=>string>={model:r=>r.modelKey,family:r=>r.family,kind:r=>kindLabel(r.kind),size:r=>r.sizeLabel,sizeBucket:r=>r.sizeBucket,quantTier:r=>r.quantTier,quantization:r=>r.quantization||unknownFacet,benchmark:r=>r.benchmarkPack??ownTests,backend:r=>r.backend};
+export const sortOptions={label:'Name',runs:'Runs',requests:'Requests',generationTps:'Generation tok/s',estimatedPrefillTps:'Prefill tok/s',prefillCalibratedTps:'Prefill tok/s (calibrated)',throughput:'Total tok/s',medianMs:'Median latency',p95Ms:'p95 latency',failureRate:'Failure rate',objective:'Objective score',localJudge:'Local judge',gpuHotSpotMax:'GPU hot spot peak'} as const;
 export type SortKey=keyof typeof sortOptions;
 export type HistoryView={search:string;groupBy:GroupBy;sort:SortKey;descending:boolean}&Record<FacetKey,string[]>;
 const emptyFacets=()=>Object.fromEntries(facetKeys.map(k=>[k,[] as string[]])) as Record<FacetKey,string[]>;
@@ -81,7 +92,7 @@ export function matchesHistory(row:HistoryRow,view:HistoryView,ignore?:FacetKey)
  }
  const terms=view.search.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
  if(!terms.length)return true;
- const haystack=[row.modelKey,row.model,row.quantization,row.family,row.architecture,row.publisher,row.runName,row.test].join(' ').toLocaleLowerCase();
+ const haystack=[row.modelKey,row.model,row.quantization,row.family,row.architecture,row.publisher,row.runName,row.test,row.backend].join(' ').toLocaleLowerCase();
  return terms.every(t=>haystack.includes(t));
 }
 const promptOrder=['short','medium','long',otherPrompt];
@@ -118,11 +129,11 @@ export type HistoryGroup={
  runs:{id:string;name:string;created:string;status:string}[];
  first:string;last:string;
  requests:number;completed:number;failures:number;failureRate:number|null;
- generationTps:Spread;estimatedPrefillTps:Spread;throughput:Spread;ttftMs:Spread;
+ generationTps:Spread;estimatedPrefillTps:Spread;prefillCalibratedTps:Spread;throughput:Spread;ttftMs:Spread;
  medianMs:number|null;p95Ms:number|null;
  objective:number|null;localJudge:number|null;externalJudge:number|null;
  gpuHotSpotAvg:number|null;gpuHotSpotMax:number|null;
- conditions:Record<'concurrency'|'promptSizes'|'mtp'|'vision'|'reasoning',string[]>;
+ conditions:Record<'concurrency'|'promptSizes'|'mtp'|'mtpDepth'|'vision'|'reasoning',string[]>;
  mixed:boolean;
 };
 const distinct=(rows:HistoryRow[],pick:(r:HistoryRow)=>string)=>[...new Set(rows.map(pick))].filter(Boolean);
@@ -136,10 +147,13 @@ function aggregate(key:string,label:string,rows:HistoryRow[]):HistoryGroup{
  const conditions={
   concurrency:distinct(rows,r=>String(r.concurrency)).sort((a,b)=>+a-+b),
   promptSizes:distinct(rows,r=>r.promptSize??otherPrompt),
-  mtp:distinct(rows,r=>r.mtp),vision:distinct(rows,r=>r.vision),reasoning:distinct(rows,r=>r.reasoning)};
+  mtp:distinct(rows,r=>r.mtp),mtpDepth:distinct(rows,r=>mtpDepthText(rowDepth(r))),vision:distinct(rows,r=>r.vision),reasoning:distinct(rows,r=>r.reasoning)};
  return {key,label,rows,models:distinct(rows,r=>r.modelKey).sort(),runs,first:created[0]??'',last:created[created.length-1]??'',
   requests,completed:requests-failures,failures,failureRate:requests?failures/requests:null,
   generationTps:weighted(rows,r=>r.generationTps,ok),estimatedPrefillTps:weighted(rows,r=>r.estimatedPrefillTps,ok),
+  // Measured once per loaded model rather than per request, so every row of one model carries the
+  // same number; weighting by requests still pools two runs of that model in the right proportion.
+  prefillCalibratedTps:weighted(rows,r=>r.prefillCalibratedTps,ok),
   throughput:weighted(rows,r=>r.throughput,ok),ttftMs:weighted(rows,r=>r.ttftMs,ok),
   medianMs:percentile(durations,.5),p95Ms:percentile(durations,.95),
   // Scores weight by responses that actually carried a score, so an ungraded run never dilutes a graded one.
@@ -164,7 +178,7 @@ const sortValue=(g:HistoryGroup,key:SortKey):number|string|null=>{
   case 'label':return g.label;
   case 'runs':return g.runs.length;
   case 'requests':return g.requests;
-  case 'generationTps':case 'estimatedPrefillTps':case 'throughput':return g[key]?.value??null;
+  case 'generationTps':case 'estimatedPrefillTps':case 'prefillCalibratedTps':case 'throughput':return g[key]?.value??null;
   default:return g[key];
  }
 };

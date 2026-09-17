@@ -4,13 +4,15 @@ import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
-import { mtpArgs } from './mtp';
+import { assertMtpPlan } from './mtp';
 import { visionArgs, projectorToggle, noProjectorToggleNote } from './vision';
 import { visionTests } from './vision-image';
 import { Store } from './store';
 import { defaultSettings, starterTests, performanceTest } from '../src/defaults';
+import { awaitIndexed, createTextOnly, planTextOnly, removeTextOnly, textOnlyTwins } from './text-only';
 import type { Run, RunConfig, Settings, PublicSettings, SettingsUpdate, TestCase, Sample, Progress } from '../src/types';
 import { cli, listModels, resolveLms } from './lmstudio';
+import { listRuntimes } from './runtime';
 import { validateConfig, validateSettings, validateTest } from './validation';
 import { gradingPackage, parseGrade } from './scoring';
 import { exportText } from './export';
@@ -102,7 +104,7 @@ function launch(run:Run,retries?:Sample[],gradeOnly=false){assertIdle();activeRu
 }
 async function newRun(config:RunConfig,retries?:Sample[],source?:Run){
  assertIdle();validateConfig(config,allPacks());const models=await listModels(settings());for(const key of config.modelKeys)if(!models.some(m=>m.key===key))throw Error('Selected model no longer available: '+key);
- for(const model of models.filter(m=>config.modelKeys.includes(m.key))){mtpArgs(model,config.mtp,config.mtpDraftTokens??2);visionArgs(model,config.vision);}
+ for(const model of models.filter(m=>config.modelKeys.includes(m.key))){assertMtpPlan(model,config);visionArgs(model,config.vision);}
  const tests=source?.tests??[...(config.mode!=='quality'?config.performanceLengths.map(performanceTest):[]),...(config.mode!=='performance'?(config.benchmark?selectBenchmark(config.benchmark,allPacks()):store.tests().filter(t=>config.testIds.includes(t.id))):[]),...(config.vision==='on'?visionTests():[])];
  if(!tests.length)throw Error('Select at least one available test.');if(config.mode!=='performance'&&!source&&!config.benchmark&&config.testIds.some(id=>!tests.some(t=>t.id===id)))throw Error('A selected test was deleted. Refresh your selection.');
  const now=new Date().toISOString();let runtime='Unavailable';try{runtime=await cli(settings(),['runtime','ls']);}catch{}
@@ -120,6 +122,10 @@ if(locked)app.whenReady().then(()=>{
  handle('modelProfiles',()=>store.profiles());
  handle('saveModelProfile',(key,profile)=>store.saveProfile(key,profile));
  handle('models',()=>listModels(settings()));
+ // The installed llama.cpp builds, so a run can name the one it wants. On an AMD card the ROCm
+ // and Vulkan builds can differ by a large factor on prompt processing, and which one produced a
+ // finished run's numbers is not recoverable afterwards unless the run recorded it.
+ handle('runtimes',()=>listRuntimes(settings(),cli));
  handle('startServer',async()=>{assertIdle();const s=settings();const u=new URL(s.baseUrl);resolveLms(s);return cli(s,['server','start','--port',u.port||'1234']);});
  handle('saveSettings',(s:SettingsUpdate)=>{assertIdle();validateSettings(s);const current=storedSettings();
   // An omitted token means "leave the stored one alone". The window never
@@ -222,6 +228,16 @@ if(locked)app.whenReady().then(()=>{
   setTimeout(()=>app.quit(),400);
   return updateState.file;
  });
+ // A vision projector cannot be detached at load time (see text-only.ts), so the only honest
+ // answer is a second, projector-free entry for LM Studio to index. Both actions are refused
+ // while a run is in flight, because either changes what LM Studio lists.
+ handle('textOnlyPlan',async(key:string)=>{const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);return planTextOnly(model);});
+ handle('makeTextOnly',async(key:string)=>{assertIdle();const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);
+  const folder=createTextOnly(planTextOnly(model));
+  if(!await awaitIndexed(folder))throw Error(`The copy was made at ${folder}, but LM Studio has not listed it yet. Refresh the model library in a moment; if it never appears, check that folder is inside LM Studio's models directory.`);
+  return folder;});
+ handle('textOnlyTwins',()=>textOnlyTwins());
+ handle('removeTextOnly',async(folder:string)=>{assertIdle();removeTextOnly(folder);await awaitIndexed(folder,undefined,20000,150,false);});
  handle('openData',()=>shell.openPath(dataPath));
  win=new BrowserWindow({width:1440,height:960,minWidth:1050,minHeight:720,title:'Local Model Bench',icon:path.join(__dirname,'../assets/icon.png'),backgroundColor:'#101416',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
  win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',e=>e.preventDefault());

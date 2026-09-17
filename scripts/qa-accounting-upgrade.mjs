@@ -11,10 +11,10 @@ const custom={id:'accounting-cash-capital',name:'Preserve my custom accounting c
 db.prepare('INSERT INTO tests VALUES (?,?)').run(custom.id,JSON.stringify(custom));db.close();
 const launch=()=>electron.launch({executablePath:path.resolve('outputs/win-unpacked/Local Model Bench.exe'),args:[],env:{...process.env,LMB_DATA_DIR:dir},timeout:60000});
 let app=await launch();try{
- let page=await app.firstWindow();await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ let page=await app.firstWindow();await page.getByRole('heading',{name:'Choose models to benchmark'}).waitFor();
  let s=await page.evaluate(()=>window.bench.snapshot());assert.equal(s.tests.filter(t=>t.category==='Accounting').length,12);assert.deepEqual(s.tests.find(t=>t.id===custom.id),custom);
  await page.evaluate(()=>window.bench.deleteTest('accounting-supplies'));
- await app.close();app=await launch();page=await app.firstWindow();await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ await app.close();app=await launch();page=await app.firstWindow();await page.getByRole('heading',{name:'Choose models to benchmark'}).waitFor();
  s=await page.evaluate(()=>window.bench.snapshot());assert.equal(s.tests.filter(t=>t.category==='Accounting').length,11);assert.ok(!s.tests.some(t=>t.id==='accounting-supplies'));assert.deepEqual(s.tests.find(t=>t.id===custom.id),custom);
  assert.equal(await app.evaluate(({app})=>app.getVersion()),'1.5.0');
  fs.writeFileSync('work/accounting-mtp-ui/upgrade-result.json',JSON.stringify({passed:true,packagedVersion:'1.5.0',customTestPreserved:true,deletedTestRemainsDeleted:true},null,2));

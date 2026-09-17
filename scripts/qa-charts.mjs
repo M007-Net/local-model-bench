@@ -9,7 +9,7 @@ const source=JSON.parse(fs.readFileSync('outputs/Live-validation-results.json','
 const app=await electron.launch({...(process.env.LMB_QA_EXE?{executablePath:process.env.LMB_QA_EXE}:{}),args:process.env.LMB_QA_EXE?[]:[root],env:{...process.env,LMB_DATA_DIR:dir},timeout:60000});
 const page=await app.firstWindow();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
- await page.getByRole('heading',{name:'Your models. Real numbers.'}).waitFor();
+ await page.getByRole('heading',{name:'Choose models to benchmark'}).waitFor();
  // Inject saved data into an isolated QA database, then reload to exercise ordinary retrieval.
  const db=new DatabaseSync(path.join(dir,'bench.sqlite'));const {samples,waves,...doc}=source;
  db.prepare('INSERT OR REPLACE INTO runs VALUES (?,?)').run(source.id,JSON.stringify(doc));
