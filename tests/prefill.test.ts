@@ -1,7 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {calibratePrefill,calibrationPrompt,calibrationRepeats,minDeltaMs,minTokenRatio,prefillText} from '../src/prefill';
+import {calibratePrefill,calibrationFor,calibrationKey,calibrationPrompt,calibrationRepeats,minDeltaMs,minTokenRatio,prefillText} from '../src/prefill';
 import {parseRuntimes,runtimeChoices,runtimeLabel} from '../electron/runtime';
+import type {Run} from '../src/types';
 import {cacheScale,cacheScalePair,cacheQuantText,needsFlashAttention} from '../src/cache-quant';
 
 // The case the calibration exists for: a fixed per-request cost that a single measurement charges
@@ -94,4 +95,32 @@ test('cache quantization scales memory and is described honestly',()=>{
  assert.equal(needsFlashAttention('off','off'),false);
  assert.equal(needsFlashAttention('f16','f16'),false);
  assert.equal(needsFlashAttention('off','q4_0'),true);
+});
+
+// The bug this caught on real data: the engine stored calibrations under one key shape and the
+// results screen looked them up under another, so the calibrated column was blank on every sweep —
+// the exact runs it was built for. Emit and lookup now share calibrationKey(), and the shape saved
+// before the fix is still read.
+test('a calibration is found under the key the engine actually wrote',()=>{
+ const c=(tps:number)=>({marginalTps:tps,overheadMs:0,naiveTps:null,note:'',small:{tokens:1,ms:1},big:{tokens:9,ms:9}});
+ assert.equal(calibrationKey('m@q4',0),'prefill:m@q4 · MTP off','depth 0 is "MTP off", never "MTP MTP off"');
+ assert.equal(calibrationKey('m@q4',1),'prefill:m@q4 · MTP 1 token');
+ assert.equal(calibrationKey('m@q4',2),'prefill:m@q4 · MTP 2 tokens');
+ assert.equal(calibrationKey('m@q4',null),'prefill:m@q4','a run with no sweep keeps the plain key');
+
+ // Round trip through the canonical key, per depth.
+ const canonical={modelInfo:Object.fromEntries([0,1,2].map(d=>[calibrationKey('m@q4',d),c(100+d)]))} as unknown as Run;
+ for(const d of [0,1,2]) assert.equal(calibrationFor(canonical,'m@q4',d)?.marginalTps,100+d);
+
+ // Runs saved before the fix used 'MTP ' + label, which doubled the prefix at depth 0.
+ const legacy={modelInfo:{'prefill:m@q4 · MTP MTP off':c(7),'prefill:m@q4 · MTP 2 tokens':c(9)}} as unknown as Run;
+ assert.equal(calibrationFor(legacy,'m@q4',0)?.marginalTps,7,'the old depth-0 key is still read');
+ assert.equal(calibrationFor(legacy,'m@q4',2)?.marginalTps,9);
+
+ // A non-sweep run stores one calibration under the plain key; a depth still finds it.
+ const plain={modelInfo:{'prefill:m@q4':c(5)}} as unknown as Run;
+ assert.equal(calibrationFor(plain,'m@q4',0)?.marginalTps,5);
+ assert.equal(calibrationFor(plain,'m@q4',null)?.marginalTps,5);
+ // And nothing is invented when nothing was measured.
+ assert.equal(calibrationFor({modelInfo:{}} as unknown as Run,'m@q4',1),null);
 });

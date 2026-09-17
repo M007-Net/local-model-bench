@@ -25,6 +25,8 @@ import {defaultHistoryView,restoreHistoryView,shortDate} from './history';
 import {defaultSweep,maxMtpDepth,measuredDepths,mtpDepthText,sweepSteps,sweepVerdicts} from './mtp-sweep';
 import {calibrationFor,focusBlurb,focusColumns,resultsFocuses,type ResultsFocus} from './results-focus';
 import {backendRows,comparableBackends} from './chart-compare';
+import {planTextOnlySwap,textOnlyIncomplete,textOnlySummary} from './text-only-swap';
+import type {Twin as TextOnlyTwin} from '../electron/text-only';
 import {backendOf} from '../electron/runtime';
 import type {HistoryRow} from './history';
 import {runtimeChoices,type Runtime} from '../electron/runtime';
@@ -71,10 +73,14 @@ function App(){
  const [page,setPage]=useState('Models'),[snap,setSnap]=useState<Snapshot|null>(null),[models,setModels]=useState<Model[]>([]),[connected,setConnected]=useState(false),[connectionError,setConnectionError]=useState(''),[config,setConfig]=useState<RunConfig>(structuredClone(defaultConfig)),[busy,setBusy]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[progress,setProgress]=useState<Progress|null>(null),[runId,setRunId]=useState(''),[run,setRun]=useState<Run|null>(null),[editTest,setEditTest]=useState<TestCase|null>(null),[settingsDraft,setSettingsDraft]=useState<PublicSettings>(defaultPublicSettings),[tokenDraft,setTokenDraft]=useState(''),[clearToken,setClearToken]=useState(false),[sampleId,setSampleId]=useState('');
  const refresh=async()=>{const s=await api.snapshot();setSnap(s);setProgress(s.progress);return s;};
  const [runtimes,setRuntimes]=useState<Runtime[]>([]);
+ // Text-only copies of vision models. The vision toggle needs these to mean anything: LM Studio
+ // attaches a projector from the model's index entry and offers no way to load without it.
+ const [twins,setTwins]=useState<TextOnlyTwin[]>([]);
  const discover=async()=>{try{const m=await api.models();setModels(m);setConnected(true);setConnectionError('');
   // Which llama.cpp builds LM Studio has. Best effort: an older LM Studio that cannot list them
   // simply leaves the run on whatever engine is already selected, exactly as before.
   api.runtimes().then(setRuntimes).catch(()=>setRuntimes([]));
+  api.textOnlyTwins().then(setTwins).catch(()=>setTwins([]));
   return m;}catch(e){setConnected(false);setConnectionError((e as Error).message);return [];}};
  const act=async(name:string,fn:()=>Promise<unknown>)=>{setBusy(name);setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy('');}};
  useEffect(()=>{if(!api){setError('Open this app through Local Model Bench.exe. The browser preview cannot access desktop features.');return;}refresh().then(s=>{setSettingsDraft(s.settings);setConfig(c=>({...c,timeoutSec:s.settings.timeoutSec}));if(s.runs[0])setRunId(s.runs[0].id);}).catch(e=>setError(e.message));discover();return api.onProgress(p=>{setProgress(p);if(p)setRunId(p.runId);else{refresh();discover();}});},[]);
@@ -98,6 +104,8 @@ function App(){
  // Confirmed MTP support is already required of every selected model whenever MTP is on, which a
  // sweep always is; the only extra way to block a sweep is to have emptied its list of depths.
  const sweepBlocked=!!config.mtpSweep&&!config.mtpSweep.length;
+ // What "Off / text-only" would actually take, given what is selected and which copies exist.
+ const textOnly=useMemo(()=>planTextOnlySwap(config.modelKeys,models,twins),[config.modelKeys,models,twins]);
  const allowedReasoning=reasoningOptions(models,config.modelKeys);
  const invalidReasoning=config.reasoning!=='default'&&!allowedReasoning.includes(config.reasoning);
  const visionMode=config.vision??'auto';
@@ -147,6 +155,21 @@ function App(){
  {mtpUnsupported.length>0&&<p className="hint amber">Native MTP is not confirmed for: {mtpUnsupported.map(m=>`${m.display_name} — ${m.nativeMtp?.reason??'LM Studio reports nothing about MTP for this file.'}`).join(' ')} Deselect them or turn MTP off.</p>}
  {mtpSidecar.length>0&&<p className="hint">{mtpSidecar.map(m=>m.display_name).join(', ')} keep{mtpSidecar.length===1?'s':''} MTP heads in a separate file rather than inside the model. LM Studio exposes no command-line switch for those, so this app writes the setting into LM Studio’s own per-model configuration for the length of each load and restores it immediately afterwards. Every load is then checked against LM Studio’s engine log, and nothing is measured unless that log names this exact head.</p>}</>}
  <div className="field"><span id="vision-mode-label">Vision mode</span><div className="segmented" role="group" aria-labelledby="vision-mode-label">{(['auto','off','on'] as const).map(mode=><button key={mode} className={visionMode===mode?'chosen':''} aria-pressed={visionMode===mode} disabled={mode==='on'&&!visionCapable.length} title={mode==='on'&&!visionCapable.length?'No downloaded model reports vision capability to LM Studio.':undefined} onClick={()=>update('vision',mode)}>{({auto:'Auto',off:'Off / text-only',on:'On'} as const)[mode]}</button>)}</div><small>LM Studio has no load-time switch for a vision projector: it belongs to the model entry itself, so this chooses whether images are sent, and On additionally requires LM Studio to report the model as vision-capable.</small></div><p className="hint">{visionMode==='on'?'Images are sent as local data URLs only; a deterministic image smoke test runs alongside your text tests. Nothing leaves this machine.':visionMode==='off'?'No image is sent with any request. '+noProjectorToggleNote:'LM Studio’s own defaults; this app sends no image.'}</p>{visionMode==='on'&&<>{visionCapable.length>0&&<button onClick={()=>update('modelKeys',visionCapable.map(m=>m.key))}>Select vision-capable models</button>}{!!visionUnsupported.length&&<p className="hint amber">Vision is not confirmed for: {visionUnsupported.map(m=>m.display_name).join(', ')}. LM Studio reports no vision projector for these model entries. Deselect them, or choose Auto or Off to benchmark them as text-only — a separate non-vision copy of the model is not needed.</p>}</>}{visionMode!=='on'&&selectedModels.some(m=>visionSupport(m).supported===true)&&<p className="hint">A vision-capable model stays fully usable for text benchmarks; its projector remains loaded either way.</p>}
+ {visionMode==='off'&&textOnly.projectored.length>0&&<div className="text-only-swap">
+  <p className="hint">{textOnlySummary(textOnly)}</p>
+  <div className="button-row">
+   {textOnly.swappable.length>0&&<button onClick={()=>update('modelKeys',textOnly.nextKeys)}>Use text-only {textOnly.swappable.length===1?'copy':'copies'}</button>}
+   {textOnly.needTwin.length>0&&<button disabled={!!busy} onClick={()=>act('twins',async()=>{
+     for(const m of textOnly.needTwin)await api.makeTextOnly(m.key);
+     const fresh=await api.textOnlyTwins();setTwins(fresh);
+     const next=await discover();
+     // Swap against the freshly listed models and twins, not the state this click started with.
+     setConfig(c=>({...c,modelKeys:planTextOnlySwap(c.modelKeys,next,fresh).nextKeys}));
+     setNotice(`Text-only ${textOnly.needTwin.length===1?'copy':'copies'} made and selected. They are hard links, so they use no extra disk.`);
+    })}>{busy==='twins'?'Making…':`Make text-only ${textOnly.needTwin.length===1?'copy':'copies'}`}</button>}
+  </div>
+  {textOnlyIncomplete(textOnly)&&<p className="hint amber">Until then this run still loads those projectors; text-only only stops images being sent.</p>}
+ </div>}
  <FieldGroup label="Models"><div className="selection-list">{models.map(m=><label key={m.key}><input type="checkbox" checked={config.modelKeys.includes(m.key)} onChange={()=>update('modelKeys',toggle(config.modelKeys,m.key))}/><span>{modelLabel(m)}</span></label>)}{!models.length&&<p>Connect to LM Studio from the Models screen first.</p>}</div></FieldGroup>
  {models.some(m=>m.loaded_instances.length>0)&&<p className="hint amber">Other models are loaded: {models.filter(m=>m.loaded_instances.length).map(m=>m.display_name).join(', ')}. These stay loaded and can affect memory and measurements.</p>}
  {config.mode!=='quality'&&<FieldGroup label="Performance prompt sizes" hint="Short ≈150, medium ≈2,000, long ≈6,000 tokens. Actual counts depend on the model; increase context if needed."><div className="checks-row">{['short','medium','long'].map(n=><label key={n}><input type="checkbox" checked={config.performanceLengths.includes(n)} onChange={()=>update('performanceLengths',toggle(config.performanceLengths,n))}/>{n}</label>)}</div></FieldGroup>}

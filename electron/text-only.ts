@@ -103,16 +103,28 @@ export async function awaitIndexed(folder:string,home=homedir(),timeoutMs=20000,
  }
 }
 
-export type Twin={folder:string;source:string;sourceKey:string;created:string};
+// `key` is the twin's OWN model key, which is what a run has to select to load the weights without
+// the projector. LM Studio assigns it when it indexes the folder, so it is read back from the index
+// rather than derived from the folder name; null while LM Studio has not indexed the twin yet.
+export type Twin={folder:string;source:string;sourceKey:string;created:string;key:string|null};
 function readMarker(folder:string):Twin|null{
  try{
   const marker=JSON.parse(readFileSync(path.join(folder,MARKER),'utf8'));
   if(marker?.createdBy!=='local-model-bench'||typeof marker.source!=='string')return null;
-  return {folder:slash(folder),source:slash(marker.source),sourceKey:String(marker.sourceKey??''),created:String(marker.created??'')};
+  return {folder:slash(folder),source:slash(marker.source),sourceKey:String(marker.sourceKey??''),created:String(marker.created??''),key:null};
  }catch{return null;}
 }
 // Twins this app made, found by their marker rather than by their name, so a folder a user
 // happened to name "… - Text only" themselves is never treated as this app's to delete.
+// Which model key LM Studio gave a twin folder. Matched on the indexed entry point living inside
+// that folder, because the key itself is LM Studio's to choose and has no reliable spelling.
+function keyForFolder(folder:string,home:string):string|null{
+ try{
+  const inside=slash(folder).replace(/\/+$/,'')+'/';
+  const hit=readIndex(home).models.filter((m:any)=>slash(String(m?.entryPoint?.absPath??'')).startsWith(inside));
+  return hit.length===1&&typeof hit[0].defaultIdentifier==='string'?hit[0].defaultIdentifier:null;
+ }catch{return null;}
+}
 export function textOnlyTwins(home=homedir()):Twin[]{
  const root=path.join(home,'.lmstudio','models'),found:Twin[]=[];
  const walk=(dir:string,depth:number)=>{
@@ -126,7 +138,8 @@ export function textOnlyTwins(home=homedir()):Twin[]{
   }
  };
  walk(root,3);
- return found;
+ // Resolved once here rather than per caller: the index is one file read for the whole list.
+ return found.map(t=>({...t,key:keyForFolder(t.folder,home)}));
 }
 // Removal refuses anything that is not one of this app's twins, and anything holding a file
 // that exists nowhere else. Between them, a delete here can only ever drop directory entries

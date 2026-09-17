@@ -6,6 +6,32 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.12.0 — 2026-09-17
+
+### Added
+
+- **Off / text-only can now actually load without the projector.** The toggle only
+  ever controlled whether an image was *sent*; the projector loaded regardless, because
+  LM Studio attaches one from the model's index entry and from nowhere else. Rechecked
+  against LM Studio 2.40.0: none of the 24 `llm.load.*` keys in its bundle mentions
+  vision, and its llama-server carries no `--mmproj` flag at all, since it drives the
+  engine through its own bindings rather than a command line. So the toggle now drives
+  the one thing that does work — the text-only copy this app already builds. With
+  **Off / text-only** selected, any chosen model that would still load a projector is
+  named, with one button to select the text-only copies that exist and another to make
+  the ones that do not. Copies are hard links and cost no disk. A model with no
+  projector is left alone, and a run that cannot be made fully text-only says so
+  rather than implying otherwise.
+
+### Fixed
+
+- **Calibrated prompt processing was blank on every sweep.** The engine stored each
+  calibration under one key shape and the results screen looked it up under another,
+  so the column existed and never resolved — on exactly the runs it was built for. Both
+  sides now use one `calibrationKey()`, which also drops a doubled prefix that spelled
+  depth 0 as "MTP MTP off". Calibrations saved under the old shape are still read, so
+  finished runs keep their measurements.
+
 ## 1.11.1 — 2026-09-17
 
 ### Fixed

@@ -33,3 +33,10 @@
 .engine-compare{margin-bottom:22px}
 .engine-compare .segmented{margin:0}
 .engine-compare .hint{margin:10px 0 0}
+
+/* Making the vision toggle actionable: shown only when "Off / text-only" is selected and something
+   in the run would still load a projector. */
+.text-only-swap{margin:-8px 0 20px;padding:14px 16px;border:1px solid #3e4a3a;border-radius:8px;background:#1d2420}
+.text-only-swap .hint{margin:0 0 10px}
+.text-only-swap .button-row button{font-size:12px}
+.text-only-swap .hint.amber{margin:10px 0 0}

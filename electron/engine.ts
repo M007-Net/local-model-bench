@@ -12,7 +12,7 @@ import { applyCacheQuant,verifyCacheQuant } from './cache-quant';
 import { cacheQuantText } from '../src/cache-quant';
 import { runtimeLabel,selectRuntime } from './runtime';
 import { estimateLoad,loadAdvice,looksLikeMemory } from './load-estimate';
-import { calibratePrefill,calibrationPrompt,calibrationRepeats,prefillText } from '../src/prefill';
+import { calibratePrefill,calibrationKey,calibrationPrompt,calibrationRepeats,prefillText } from '../src/prefill';
 import { serverContext } from '../src/defaults';
 import { idleSampler, type GpuSampler } from './gpu';
 
@@ -127,7 +127,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
    const small=await point(calibrationRepeats.small),big=await point(calibrationRepeats.big);
    const calibration=calibratePrefill(small,big);
    log(`Prompt processing for ${model.display_name}: ${prefillText(calibration)}. ${calibration.note}`);
-   emit({type:'model',key:`prefill:${key}${steps.length>1?` · MTP ${step.label}`:''}`,info:calibration});
+   emit({type:'model',key:calibrationKey(key,steps.length>1?step.depth:null),info:calibration});
   }catch(e){
    // A calibration that could not be taken costs the run nothing else: the per-request figures
    // are still recorded, they are simply left uncorrected.

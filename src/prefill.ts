@@ -23,6 +23,7 @@
 // was silently charging to the GPU.
 
 import type {Run} from './types';
+import {mtpDepthLabel,mtpDepthText} from './mtp-sweep';
 
 export type PrefillPoint={tokens:number;ms:number};
 export type PrefillCalibration={
@@ -73,9 +74,21 @@ export const prefillText=(c:PrefillCalibration|null|undefined):string=>
 // Calibrated prompt processing is measured once per loaded instance rather than per request, so it
 // is looked up by model (and by depth when a sweep loaded the model more than once) rather than
 // living on the row. Rows pooled from other runs carry their own copy instead; see HistoryRow.
+// The key a calibration is stored under. mtpDepthText, never 'MTP ' + mtpDepthLabel: the label for
+// depth 0 is already 'MTP off', so the shorter form spells 'MTP MTP off' — the same trap the sweep
+// labels carry a warning about.
+export const calibrationKey=(modelKey:string,depth:number|null):string=>
+ depth===null?`prefill:${modelKey}`:`prefill:${modelKey} · ${mtpDepthText(depth)}`;
+// Runs saved before that was fixed used 'MTP ' + the label, doubling the prefix at depth 0. They are
+// still read, because a key format is not worth losing a finished run's measurements over.
+const legacyKey=(modelKey:string,depth:number):string=>`prefill:${modelKey} · MTP ${mtpDepthLabel(depth)}`;
 export function calibrationFor(run:Run,modelKey:string,depth:number|null):PrefillCalibration|null{
  const info=run.modelInfo as Record<string,unknown>;
- const exact=depth===null?undefined:info[`prefill:${modelKey} · MTP ${depth===0?'off':String(depth)}`];
- const value=exact??info[`prefill:${modelKey}`];
- return value&&typeof value==='object'&&'marginalTps' in (value as object)?value as PrefillCalibration:null;
+ const candidates=depth===null?[]:[calibrationKey(modelKey,depth),legacyKey(modelKey,depth)];
+ // The undepthed key last: a run with no sweep stores exactly one calibration under it.
+ for(const key of [...candidates,`prefill:${modelKey}`]){
+  const value=info[key];
+  if(value&&typeof value==='object'&&'marginalTps' in (value as object))return value as PrefillCalibration;
+ }
+ return null;
 }
