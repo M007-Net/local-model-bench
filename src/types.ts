@@ -1,5 +1,10 @@
 export type Rule = { id: string; label: string; type: 'exact'|'contains'|'heading'|'number'|'json'|'json-equal'|'field'|'words'|'lines'|'final-number'|'ifeval'; expected?: string; path?: string; tolerance?: number; min?: number; max?: number; weight: number };
-export type TestCase = { benchmark?:import('./benchmarks').BenchmarkMeta; id:string; name:string; category:string; version:number; prompt:string; answerKey:string; rubric:string; maxTokens:number; rules:Rule[]; kind:'quality'|'performance'; image?:string; imageDigest?:string };
+// allowCodeFence lets a test accept an answer wrapped in a single ```json fence. It defaults to
+// false, because a prompt that says "no prose or code fences" — as the accounting pack's does —
+// is testing instruction following as much as content, and a fence there is a real failure. Tests
+// whose prompt asks only for "JSON only" set it true: scoring those 0 measures a markdown habit
+// the prompt never mentioned.
+export type TestCase = { allowCodeFence?:boolean; benchmark?:import('./benchmarks').BenchmarkMeta; id:string; name:string; category:string; version:number; prompt:string; answerKey:string; rubric:string; maxTokens:number; rules:Rule[]; kind:'quality'|'performance'; image?:string; imageDigest?:string };
 export type Model = {nativeMtp?:{supported:boolean|null;reason:string;resource?:string;kind?:'bundled'|'sidecar';draftResource?:string;draftPath?:string};key:string; display_name:string; size_bytes:number; quantization:{name:string}|null; max_context_length:number; type:string; loaded_instances:{id:string; config:{context_length:number;parallel?:number;[key:string]:unknown}}[]; capabilities?:{vision?:boolean;reasoning?:{allowed_options:string[];default:string}}; [key:string]:unknown};
 export type Settings = {baseUrl:string; token:string; lmsPath:string; timeoutSec:number; loadTimeoutSec:number; judgePrompt:string; updateRepo:string; updateCheck:boolean};
 // What the window is allowed to see. The token itself never crosses the IPC

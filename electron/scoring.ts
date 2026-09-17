@@ -1,12 +1,16 @@
 import type { TestCase, Objective, Grade, Sample } from '../src/types';
 
-import { parseAnswer, equalAnswer } from './json-answer';
+import { parseAnswer, equalAnswer, unfence } from './json-answer';
 import {finalNumber,scoreInstructions,GraderError} from './benchmark-scoring';
 export function objectiveScore(output:string,test:TestCase):Objective {
  const checks=test.rules.map(r=>{
   let passed=false,detail='',unscorable=false;
   try {
    const s=output.trim();
+   // JSON-shaped checks read the answer with a single surrounding code fence removed; every other
+   // check still sees exactly what the model wrote.
+   const {json:j,fenced}=test.allowCodeFence?unfence(s):{json:s,fenced:false};
+   const note=fenced?' (unwrapped from a code fence)':'';
    switch(r.type){
     case 'final-number': {const n=finalNumber(s);passed=n!==null&&n===Number(r.expected);detail=passed?'Correct final numeric answer':`Expected ${r.expected}; received ${n??'no valid final number'}`;break;}
     case 'ifeval': {const result=scoreInstructions(s,JSON.parse(r.expected??'[]'));passed=result.passed;detail=result.detail;break;}
@@ -14,9 +18,9 @@ export function objectiveScore(output:string,test:TestCase):Objective {
     case 'contains': passed=s.toLocaleLowerCase().includes((r.expected??'').toLocaleLowerCase());detail=passed?'Required text present':'Required text missing';break;
     case 'heading': passed=s.split(/\r?\n/).some(line=>line.trim().replace(/^#{1,6}\s+/, '').replace(/^\*\*(.*?)\*\*$/, '$1').replace(/:$/, '').trim().toLowerCase()===(r.expected??'').trim().toLowerCase());detail=passed?'Standalone heading found':'Expected a standalone plain or Markdown heading';break;
     case 'number': { const n=Number(s); passed=s!==''&&Number.isFinite(n)&&Math.abs(n-Number(r.expected))<=(r.tolerance??0);detail=passed?'Within tolerance':'Expected a single numeric answer within tolerance';break; }
-    case 'json-equal': {const mismatch=equalAnswer(parseAnswer(s),parseAnswer(r.expected??''));passed=mismatch===null;detail=mismatch??'All required values match exactly';break;}
-    case 'json': JSON.parse(s);passed=true;detail='Valid JSON without surrounding prose';break;
-    case 'field': {let actual:any=JSON.parse(s);for(const p of (r.path??'').split('.')){if(p==='__proto__'||p==='constructor'||p==='prototype')throw Error('Invalid path');actual=actual?.[p];}let expected:any=r.expected;try{expected=JSON.parse(r.expected??'');}catch{}passed=JSON.stringify(actual)===JSON.stringify(expected);detail=`Actual: ${JSON.stringify(actual)??'missing'}; expected: ${JSON.stringify(expected)}`;break;}
+    case 'json-equal': {const mismatch=equalAnswer(parseAnswer(j),parseAnswer(r.expected??''));passed=mismatch===null;detail=mismatch??'All required values match exactly'+note;break;}
+    case 'json': JSON.parse(j);passed=true;detail='Valid JSON without surrounding prose'+note;break;
+    case 'field': {let actual:any=JSON.parse(j);for(const p of (r.path??'').split('.')){if(p==='__proto__'||p==='constructor'||p==='prototype')throw Error('Invalid path');actual=actual?.[p];}let expected:any=r.expected;try{expected=JSON.parse(r.expected??'');}catch{}passed=JSON.stringify(actual)===JSON.stringify(expected);detail=`Actual: ${JSON.stringify(actual)??'missing'}; expected: ${JSON.stringify(expected)}`;break;}
     case 'words': {const n=s?s.split(/\s+/u).length:0;passed=n>=(r.min??0)&&n<=(r.max??Infinity);detail=`${n} words; expected ${r.min??0}–${r.max??'unlimited'}`;break;}
     case 'lines': {const lines=s.split(/\r?\n/).filter(x=>x.trim());passed=lines.length>=(r.min??0)&&lines.length<=(r.max??Infinity)&&(!r.expected||lines.every(x=>x.startsWith(r.expected!)));detail=`${lines.length} nonempty lines${r.expected?'; required prefix: '+r.expected:''}`;break;}
    }

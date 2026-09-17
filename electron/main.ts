@@ -118,6 +118,15 @@ if(locked)app.whenReady().then(()=>{
  try{store=Store.open(path.join(dataPath,'bench.sqlite'));store.recover();}catch(e){return fatal('The saved benchmark database could not be opened.',e);}
  if(!store.get('seeded')){starterTests.forEach(t=>store.saveTest(t));store.set('seeded',true);}
  if(!store.get('accounting-v1-seeded')){const ids=new Set(store.tests().map(t=>t.id));starterTests.filter(t=>t.category==='Accounting'&&!ids.has(t.id)).forEach(t=>store.saveTest(t));store.set('accounting-v1-seeded',true);}
+ // Tests are seeded once and then belong to the user, so a change to a starter test's scoring has
+ // to be migrated rather than assumed. This one carries allowCodeFence onto the stored copies of
+ // the three JSON tests whose prompts never asked for an unfenced answer; anything the user has
+ // since edited keeps its own rules and prompt, and the accounting pack is untouched.
+ if(!store.get('fence-tolerance-v1')){
+  const tolerant=new Set(starterTests.filter(t=>t.allowCodeFence).map(t=>t.id));
+  for(const t of store.tests())if(tolerant.has(t.id)&&!t.allowCodeFence)store.saveTest({...t,allowCodeFence:true});
+  store.set('fence-tolerance-v1',true);
+ }
  handle('snapshot',()=>({settings:publicSettings(),tests:store.tests(),runs:store.list(),progress,dataPath,packs:allPacks().map(describePack)}));
  handle('modelProfiles',()=>store.profiles());
  handle('saveModelProfile',(key,profile)=>store.saveProfile(key,profile));

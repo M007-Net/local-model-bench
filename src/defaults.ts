@@ -14,7 +14,12 @@ const rubric='Score correctness, completeness, clarity, and instruction followin
 const rule=(id:string,label:string,type:Rule['type'],extra:Partial<Rule>={}):Rule=>({id,label,type,weight:1,...extra});
 const test=(id:string,name:string,category:string,prompt:string,rules:Rule[]=[],answerKey='',maxTokens=1024):TestCase=>({id,name,category,prompt,rules,answerKey,maxTokens,version:1,rubric,kind:'quality'});
 import { accountingTests } from './accounting';
-export const starterTests:TestCase[]=[
+// These three ask for "only JSON" and never mention code fences, so a fenced answer is the model
+// following the instruction in the usual markdown way rather than disobeying it. The accounting
+// pack is deliberately not here: its prompt says "no prose or code fences", which makes the fence
+// part of what that pack tests.
+const fenceTolerant=new Set(['subnet','facts','json-extract']);
+export const starterTests:TestCase[]=([
  test('report-general','Explain renewable energy','Report','Write a 350–500 word report comparing solar and wind power from your own knowledge. Use the headings Overview, Tradeoffs, and Recommendation. Explain intermittency, storage, and one appropriate use case for each. State uncertainties; do not invent citations.',[rule('length','350–500 words','words',{min:350,max:500}),...['Overview','Tradeoffs','Recommendation'].map(x=>rule(x,x+' heading','heading',{expected:x}))]),
  test('report-network','Design a small office network','Networking','Write a 350–500 word report recommending a network for a 30-person office with staff devices, guest Wi-Fi, and an internal file server. Use the headings Design, Security, and Operations. Explain VLANs, DHCP, DNS, firewall rules, backups, and monitoring. Work from your own knowledge; do not invent references.',[rule('length','350–500 words','words',{min:350,max:500}),...['Design','Security','Operations'].map(x=>rule(x,x+' heading','heading',{expected:x}))]),
  test('report-security','Respond to a phishing incident','Security','Write a concise incident-response report for an employee who entered their password on a phishing page. Use the headings Immediate actions, Investigation, and Prevention. Distinguish password reset, session revocation, MFA, and evidence preservation. Work from your own knowledge.', ['Immediate actions','Investigation','Prevention'].map(x=>rule(x,x+' heading','heading',{expected:x}))),
@@ -26,7 +31,7 @@ export const starterTests:TestCase[]=[
  test('instructions','Follow exact constraints','Instructions','Return exactly two lines and no other text. First line: TCP is connection-oriented. Second line: UDP is connectionless.',[rule('exact','Exact required response','exact',{expected:'TCP is connection-oriented.\nUDP is connectionless.'})],'TCP is connection-oriented.\nUDP is connectionless.',128),
  test('debug','Find a boundary bug','Coding','Explain the bug in this JavaScript function and give a corrected version. Include headings Bug, Fix, and Example. Do not execute code.\nfunction total(xs) { let sum = 0; for (let i = 0; i <= xs.length; i++) sum += xs[i]; return sum; }',[...['Bug','Fix','Example'].map(x=>rule(x,x+' heading','heading',{expected:x}))],'The <= condition accesses xs[xs.length], which is undefined, making sum NaN. Use i < xs.length. Empty input should return 0.',768),
  ...accountingTests
-];
+] as TestCase[]).map(t=>fenceTolerant.has(t.id)?{...t,allowCodeFence:true}:t);
 export function performanceTest(length:string):TestCase {
  const count=length==='long'?180:length==='medium'?55:4;
  const content=Array.from({length:count},(_,i)=>`Record ${i+1}: A regional office operates a router, two switches, staff workstations, and a file service. Backups complete nightly. Monitoring tracks latency, availability, capacity, and authentication errors.`).join('\n');

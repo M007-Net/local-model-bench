@@ -6,6 +6,44 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.13.0 — 2026-09-17
+
+### Changed
+
+- **The three starter JSON tests now accept a fenced answer.** subnet, facts and
+  json-extract ask for "only JSON" and say nothing about code fences, so a model that
+  wraps correct JSON in ```json was being scored zero for a markdown habit the prompt
+  never mentioned. Measured on Gemma 4 26B A4B: every subnet value correct, scored 0;
+  every extraction value correct, scored 20. Those three tests set `allowCodeFence`,
+  and already-saved copies are migrated once on startup, so existing installs pick the
+  change up rather than only new ones. A test you have edited yourself keeps whatever
+  rules it has.
+
+  The accounting pack is deliberately excluded: its prompt says "no prose or code
+  fences", which makes the fence part of what it tests, and it still fails one. So does
+  any test that has not opted in, along with a fence that never closes, several fenced
+  blocks, and prose around the JSON.
+
+  This changes what those three tests score. Runs saved before it keep the numbers they
+  were given, so a quality comparison that spans the change is comparing two scoring
+  rules as well as two models.
+
+## 1.12.1 — 2026-09-17
+
+### Fixed
+
+- **A correct JSON answer inside a code fence scored zero.** Models asked for "only
+  JSON" very often return it wrapped in a ```json fence. That is markup around the
+  answer rather than prose instead of it, and this app already unwrapped exactly the
+  same wrapper when reading a judge's reply — but not when scoring the model being
+  tested. Measured on Gemma 4 26B A4B: all five subnet values correct, fenced, every
+  check failing with "Unexpected token '`'", for a score of 0; and the extraction test
+  scored 20 with all four values right. The JSON-shaped checks now read the answer with
+  a single complete surrounding fence removed, and say so in the check detail rather
+  than unwrapping silently. A fence that never closes, a reply holding several fenced
+  blocks, and prose around the JSON are all still failures, because those are different
+  things to get wrong. Every other check still sees exactly what the model wrote.
+
 ## 1.12.0 — 2026-09-17
 
 ### Added
