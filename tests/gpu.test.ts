@@ -13,7 +13,7 @@ import type {GpuTick,Model,Run} from '../src/types';
 const tick=(t:number,hotSpot:number,extra:Partial<GpuTick>={}):GpuTick=>({t,tempCore:hotSpot-4,tempHotSpot:hotSpot,tempMemory:hotSpot-2,power:100,load:99,clockCore:3000,fanRpm:1200,memoryUsed:13000,...extra});
 const makeRun=():Run=>({id:'gpu-run',created:'2026-09-11',updated:'2026-09-11',status:'running',config:{...structuredClone(defaultConfig),modelKeys:['mock'],testIds:['reasoning'],mode:'quality',concurrency:[2],waves:1,maxTokens:64,contextLength:2048},tests:[starterTests.find(t=>t.id==='reasoning')!],modelInfo:{},environment:{},logs:[],samples:[],waves:[]});
 function mockAdapter(){let instance='',capacity=0,ctx=0;const m:Model={key:'mock',display_name:'Mock',type:'llm',size_bytes:100,quantization:null,max_context_length:8192,loaded_instances:[]};
- const adapter:Adapter={models:async()=>[{...m,loaded_instances:instance?[{id:instance,config:{context_length:ctx,parallel:capacity}}]:[]}],
+ const adapter:Adapter={cacheQuant:()=>()=>{},models:async()=>[{...m,loaded_instances:instance?[{id:instance,config:{context_length:ctx,parallel:capacity}}]:[]}],
   cli:async(_s,args)=>{instance=args[args.indexOf('--identifier')+1];capacity=Number(args[args.indexOf('--parallel')+1]);ctx=Number(args[args.indexOf('--context-length')+1]);return 'loaded';},
   api:async()=>{instance='';return {};},
   infer:async()=>{await new Promise(r=>setTimeout(r,5));return {output:'84',reasoning:'',rawStats:{},metrics:metrics({input_tokens:10,total_output_tokens:2,tokens_per_second:50},40,0,10,20),status:'completed' as const,possibleTruncation:false};}};

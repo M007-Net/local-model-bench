@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {calibratePrefill,calibrationFor,calibrationKey,calibrationPrompt,calibrationRepeats,minDeltaMs,minTokenRatio,prefillText} from '../src/prefill';
 import {parseRuntimes,runtimeChoices,runtimeLabel} from '../electron/runtime';
 import type {Run} from '../src/types';
-import {cacheScale,cacheScalePair,cacheQuantText,needsFlashAttention} from '../src/cache-quant';
+import {cacheScale,cacheScalePair,cacheQuantText,flashOn,needsFlashAttention} from '../src/cache-quant';
+import {validateConfig} from '../electron/validation';
+import {defaultConfig} from '../src/defaults';
 
 // The case the calibration exists for: a fixed per-request cost that a single measurement charges
 // to the GPU. 150 ms of overhead plus a true 1500 tok/s means a 150-token prompt is timed at
@@ -123,4 +125,17 @@ test('a calibration is found under the key the engine actually wrote',()=>{
  assert.equal(calibrationFor(plain,'m@q4',null)?.marginalTps,5);
  // And nothing is invented when nothing was measured.
  assert.equal(calibrationFor({modelInfo:{}} as unknown as Run,'m@q4',1),null);
+});
+
+test('flash attention defaults to on and a quantized cache cannot turn it off',()=>{
+ assert.equal(flashOn(undefined),true,'a run that says nothing gets it on');
+ assert.equal(flashOn('on'),true);
+ assert.equal(flashOn('off'),false,'and it can still be turned off deliberately');
+ // The contradiction is caught here rather than by LM Studio, whose refusal names neither setting.
+ const base={...defaultConfig,modelKeys:['m@q4'],testIds:['subnet'],performanceLengths:['short']};
+ assert.throws(()=>validateConfig({...base,cacheK:'q4_0',cacheV:'q4_0',flashAttention:'off'}),/needs flash attention/);
+ assert.doesNotThrow(()=>validateConfig({...base,cacheK:'q4_0',cacheV:'q4_0',flashAttention:'on'}));
+ // f16 is not a quantization, so it does not force the flag on.
+ assert.doesNotThrow(()=>validateConfig({...base,cacheK:'f16',cacheV:'f16',flashAttention:'off'}));
+ assert.throws(()=>validateConfig({...base,flashAttention:'sometimes' as never}),/Invalid flash attention/);
 });

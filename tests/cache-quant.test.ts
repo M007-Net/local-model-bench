@@ -24,7 +24,7 @@ const K='llm.load.llama.kCacheQuantizationType',V='llm.load.llama.vCacheQuantiza
 test('the cache type is written in LM Studio’s own shape and taken back out again',()=>{
  const {home,config}=library();
  assert.equal(existsSync(config),false,'nothing exists before the load');
- const restore=applyCacheQuant(base,'q8_0','q4_0',home);
+ const restore=applyCacheQuant(base,'q8_0','q4_0',true,home);
  assert.deepEqual(valueOf(config,K),{checked:true,value:'q8_0'});
  assert.deepEqual(valueOf(config,V),{checked:true,value:'q4_0'});
  restore();
@@ -40,7 +40,7 @@ test('an existing configuration is restored byte for byte, and its other setting
   {key:K,value:{checked:true,value:'f16'}},
  ]}},null,2);
  mkdirSync(path.dirname(config),{recursive:true});writeFileSync(config,original);
- const restore=applyCacheQuant(base,'q4_0','q4_0',home);
+ const restore=applyCacheQuant(base,'q4_0','q4_0',true,home);
  // The user's own unrelated settings are carried through rather than replaced wholesale.
  assert.equal(valueOf(config,'llm.load.contextLength'),4096);
  assert.deepEqual(valueOf(config,K),{checked:true,value:'q4_0'},'their stale cache field is replaced, not duplicated');
@@ -55,7 +55,7 @@ test('asking for off writes the field off rather than leaving whatever was there
  const {home,config}=library();
  mkdirSync(path.dirname(config),{recursive:true});
  writeFileSync(config,JSON.stringify({load:{fields:[{key:K,value:{checked:true,value:'q4_0'}}]}}));
- applyCacheQuant(base,'off','off',home);
+ applyCacheQuant(base,'off','off',true,home);
  assert.deepEqual(valueOf(config,K),{checked:false,value:'f16'});
  assert.deepEqual(valueOf(config,V),{checked:false,value:'f16'});
 });
@@ -87,21 +87,25 @@ test('a cache setting LM Studio did not apply stops the run before anything is m
 // relied on, so the flag has to be written alongside the cache fields rather than assumed.
 test('asking for a quantized cache also turns on the flash attention it requires',()=>{
  const {home,config}=library();
- const restore=applyCacheQuant(base,'q8_0','q4_0',home);
+ const restore=applyCacheQuant(base,'q8_0','q4_0',true,home);
  assert.equal(valueOf(config,'llm.load.llama.flashAttention'),true,'flash attention written with the cache');
  assert.equal(fields(config).filter(f=>f.key==='llm.load.llama.flashAttention').length,1,'written once, not duplicated');
  restore();
  assert.equal(existsSync(config),false);
 });
 
-test('a run that does not quantize leaves the user’s own flash-attention setting alone',()=>{
+// Superseded by design: flash attention is no longer inherited from LM Studio. A run states it, so
+// a run that leaves the cache alone still writes the flag — that is the point of the default, and
+// what stops an unstated setting costing five times the prompt processing.
+test('a run that does not quantize still states flash attention rather than inheriting it',()=>{
  const {home,config}=library();
  mkdirSync(path.dirname(config),{recursive:true});
  writeFileSync(config,JSON.stringify({load:{fields:[{key:'llm.load.llama.flashAttention',value:false}]}}));
- applyCacheQuant(base,'off','off',home);
- assert.equal(valueOf(config,'llm.load.llama.flashAttention'),false,'untouched when nothing was asked for');
- // f16 is not a quantization either, so it does not force the flag on.
- applyCacheQuant(base,'f16','f16',home);
+ const undo=applyCacheQuant(base,'off','off',true,home);
+ assert.equal(valueOf(config,'llm.load.llama.flashAttention'),true,'the run’s choice wins for this load');
+ assert.deepEqual(valueOf(config,K),{checked:false,value:'f16'});
+ undo();
+ // And the user's own setting is put back exactly as it was.
  assert.equal(valueOf(config,'llm.load.llama.flashAttention'),false);
 });
 
@@ -111,4 +115,28 @@ test('a load that came back without flash attention is refused rather than measu
  assert.doesNotThrow(()=>verifyCacheQuant({flash_attention:false},'off','off'));
  assert.doesNotThrow(()=>verifyCacheQuant({},'q8_0','q8_0'));
  assert.doesNotThrow(()=>verifyCacheQuant({flash_attention:true},'q8_0','q8_0'));
+});
+
+// Flash attention is now stated by the run rather than inherited, because inheriting it was worth
+// about five times the prompt processing and several seconds of fixed cost per request.
+test('flash attention is written on every load, quantized cache or not',()=>{
+ const {home,config}=library();
+ // Even with the cache left alone, the setting is stated.
+ const undo=applyCacheQuant(base,'off','off',true,home);
+ assert.equal(valueOf(config,'llm.load.llama.flashAttention'),true);
+ undo();
+ assert.equal(existsSync(config),false,'and the file this app created is removed again');
+ // Off is written as off, not simply omitted, so LM Studio's own setting cannot supply it.
+ const undo2=applyCacheQuant(base,'off','off',false,home);
+ assert.equal(valueOf(config,'llm.load.llama.flashAttention'),false);
+ assert.equal(fields(config).filter(f=>f.key==='llm.load.llama.flashAttention').length,1);
+ undo2();
+});
+
+test('a load that ignored the flash attention request is refused',()=>{
+ assert.throws(()=>verifyCacheQuant({flash_attention:false},'off','off',true),/flash attention off, not on/);
+ assert.throws(()=>verifyCacheQuant({flash_attention:true},'off','off',false),/flash attention on, not off/);
+ assert.doesNotThrow(()=>verifyCacheQuant({flash_attention:true},'off','off',true));
+ // An engine that does not report it is not assumed to have failed.
+ assert.doesNotThrow(()=>verifyCacheQuant({},'off','off',true));
 });

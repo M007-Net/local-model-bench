@@ -16,8 +16,10 @@ export type SettingsUpdate = PublicSettings & {token?:string};
 // runtime is LM Studio's engine reference (`llama.cpp-win-x86_64-amd-rocm-avx2@2.40.0`), left
 // undefined to mean "whatever LM Studio already has selected", which is what every run made
 // before this field existed did. cacheK/cacheV quantize the KV cache, the part of a run's memory
-// that grows with concurrency rather than with the weights.
-export type RunConfig = {benchmark?:import('./benchmarks').BenchmarkSelection;vision?:import('../electron/vision').VisionMode;mtp?:'off'|'on';mtpDraftTokens?:number;mtpSweep?:number[];mtpPreflight?:boolean;runtime?:string;cacheK?:import('./cache-quant').CacheQuant;cacheV?:import('./cache-quant').CacheQuant;name:string; modelKeys:string[]; testIds:string[]; mode:'combined'|'performance'|'quality'; preset:string; concurrency:number[]; waves:number; maxTokens:number; contextLength:number; temperature:number; gpu:string; reasoning:string; judgeModel:string; performanceLengths:string[]; timeoutSec:number; retryOf?:string};
+// that grows with concurrency rather than with the weights. flashAttention defaults to on, which
+// is worth about five times the prompt processing; runs saved before the field existed leave it
+// undefined and were measured under whatever LM Studio had set, so they are not evidence of it.
+export type RunConfig = {benchmark?:import('./benchmarks').BenchmarkSelection;vision?:import('../electron/vision').VisionMode;mtp?:'off'|'on';mtpDraftTokens?:number;mtpSweep?:number[];mtpPreflight?:boolean;runtime?:string;cacheK?:import('./cache-quant').CacheQuant;cacheV?:import('./cache-quant').CacheQuant;flashAttention?:'on'|'off';name:string; modelKeys:string[]; testIds:string[]; mode:'combined'|'performance'|'quality'; preset:string; concurrency:number[]; waves:number; maxTokens:number; contextLength:number; temperature:number; gpu:string; reasoning:string; judgeModel:string; performanceLengths:string[]; timeoutSec:number; retryOf?:string};
 // unscorable marks a check the grader could not evaluate at all, as opposed to one the
 // response failed. It is left off both sides of the score rather than counted as a miss.
 export type Check = {id:string;label:string;passed:boolean;weight:number;detail:string;unscorable?:boolean};

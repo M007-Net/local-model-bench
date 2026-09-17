@@ -18,7 +18,7 @@ const makeRun=(vision?:'auto'|'off'|'on',tests=[textTest]):Run=>({id:'vision-run
 function mockAdapter(capabilities:Record<string,unknown>|undefined){
  let instance='';const seen:{prompt:string;image?:string}[]=[];
  const model={key:'mock',display_name:'Mock',type:'llm',size_bytes:100,quantization:null,max_context_length:8192,loaded_instances:[],...(capabilities?{capabilities}:{})} as unknown as Model;
- const adapter:Adapter={
+ const adapter:Adapter={cacheQuant:()=>()=>{},
   models:async()=>[{...model,loaded_instances:instance?[{id:instance,config:{context_length:2048,parallel:1}}]:[]}],
   cli:async(_s,args)=>{instance=args[args.indexOf('--identifier')+1];return 'loaded';},
   api:async()=>{instance='';return {};},

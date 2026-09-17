@@ -28,11 +28,17 @@ export const cacheScale=(q:CacheQuant):number=>q==='off'?1:BITS[q]/16;
 // smaller V. The combined figure is the mean of the two halves.
 export const cacheScalePair=(k:CacheQuant,v:CacheQuant):number=>(cacheScale(k)+cacheScale(v))/2;
 
-// Whether flash attention is required. llama.cpp will not use a quantized KV cache without it,
-// and LM Studio turns it on by default, so this is a guard against a config that would silently
-// fall back to f16 and report a memory saving that did not happen.
+// Whether flash attention is required. llama.cpp will not use a quantized KV cache without it, and
+// LM Studio refuses the load outright rather than falling back. Its own default is not dependable —
+// it varies by engine and by whatever the model was last loaded with — which is why a run states the
+// setting instead of inheriting it, and why asking for a quantized cache with flash off is refused
+// rather than sent to LM Studio to fail.
 export const needsFlashAttention=(k:CacheQuant,v:CacheQuant):boolean=>
  (k!=='off'&&k!=='f16')||(v!=='off'&&v!=='f16');
 
 export const cacheQuantText=(k:CacheQuant,v:CacheQuant):string=>
  k==='off'&&v==='off'?'Off':k===v?`${k} K and V`:`${k} K · ${v} V`;
+
+// On unless a run says otherwise. Kept here rather than read inline so the engine, the validator
+// and the run preview cannot drift about what the default is.
+export const flashOn=(v:'on'|'off'|undefined):boolean=>v!=='off';

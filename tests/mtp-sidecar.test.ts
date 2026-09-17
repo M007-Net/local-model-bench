@@ -151,7 +151,7 @@ function mockAdapter(opts:{logLoads?:boolean}={}){
  const model={key:'mock',display_name:'Mock',format:'gguf',type:'llm',size_bytes:100,quantization:null,max_context_length:8192,loaded_instances:[],
   nativeMtp:{supported:true,kind:'sidecar',reason:'test fixture',resource:'pub/repo/main.gguf',draftResource:'repo/MTP/head.gguf',draftPath:'C:/models/MTP/head.gguf'}} as unknown as Model;
  let tokens=0,on=false;
- const adapter:Adapter={
+ const adapter:Adapter={cacheQuant:()=>()=>{},
   models:async()=>[{...model,loaded_instances:instance?[{id:instance,config:{context_length:2048,parallel:1,speculative_draft_mtp:false,...(on?{speculative_draft_max_tokens:tokens}:{})}}]:[]}],
   cli:async(_s,args)=>{instance=args[args.indexOf('--identifier')+1];return 'loaded';},
   api:async()=>{instance='';return {};},

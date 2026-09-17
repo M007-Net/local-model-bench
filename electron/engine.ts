@@ -9,7 +9,7 @@ import { draftModelsLoaded,settledDraftAcceptance,watchEngineLog } from './engin
 import { mtpDepthText,onSteps,preflightStep,sweepSteps,type MtpStep } from '../src/mtp-sweep';
 import { visionArgs,verifyVision,visionSummary,type VisionMode } from './vision';
 import { applyCacheQuant,verifyCacheQuant } from './cache-quant';
-import { cacheQuantText } from '../src/cache-quant';
+import { cacheQuantText,flashOn } from '../src/cache-quant';
 import { runtimeLabel,selectRuntime } from './runtime';
 import { estimateLoad,loadAdvice,looksLikeMemory } from './load-estimate';
 import { calibratePrefill,calibrationKey,calibrationPrompt,calibrationRepeats,prefillText } from '../src/prefill';
@@ -65,9 +65,14 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
   // file already contains the cache fields; the two are undone in the opposite order, so whatever
   // the file held before this load is what it holds after it.
   const cacheK=run.config.cacheK??'off',cacheV=run.config.cacheV??'off';
+  const flash=flashOn(run.config.flashAttention);
   const quantising=cacheK!=='off'||cacheV!=='off';
   if(quantising)log(`KV cache: ${cacheQuantText(cacheK,cacheV)} · written to LM Studio's per-model configuration for this load only and restored immediately afterwards. The cache is the part of this run's memory that grows with concurrency, so quantizing it is what lets a bigger model or a higher concurrency stay on the GPU.`);
-  const undoCache=quantising?(adapter.cacheQuant??applyCacheQuant)(model,cacheK,cacheV):null;
+  log(`Flash attention: ${flash?'on':'off'}${flash?'':' — off was asked for, so expect prompt processing several times slower and seconds of fixed cost before each first token'}. Written to LM Studio's per-model configuration for this load only and restored immediately afterwards.`);
+  // Written on every load now, not only when the cache is quantized: the run states the condition
+  // rather than inheriting whatever LM Studio last had, and the difference is about five times the
+  // prompt processing plus several seconds of fixed cost per request.
+  const undoCache=(adapter.cacheQuant??applyCacheQuant)(model,cacheK,cacheV,flash);
   const restore=paired&&mode==='on'?(adapter.sidecar??applySidecar)(model,draftTokens):null;
   const started=performance.now();let loadOutput:string;
   try{loadOutput=await adapter.cli(settings,args,signal);}
@@ -92,7 +97,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
   verifyMtp(instance.config,mode,model.format,draftTokens,{...(paired?{kind:'sidecar' as const,draftPath:model.nativeMtp!.draftPath}:{}),draftersLoaded:watch?(adapter.draftModels??draftModelsLoaded)(watch):[]});
   // A cache type LM Studio did not apply would make the run report a memory saving it never got,
   // and compare against other runs as though it had. Checked here, before anything is measured.
-  verifyCacheQuant(instance.config as Record<string,unknown>,cacheK,cacheV);
+  verifyCacheQuant(instance.config as Record<string,unknown>,cacheK,cacheV,flash);
   // Vision is confirmed from the reloaded model entry's reported capability, the only
   // evidence LM Studio gives; a failure throws here, before any request is measured.
   const vision=verifyVision(owner,visionMode);

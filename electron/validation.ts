@@ -5,7 +5,7 @@ import { validateUrl, validateLmsPath } from './lmstudio';
 import { parseRepo } from './update';
 import {builtInPacks,validateBenchmark,type BenchmarkPack} from '../src/benchmarks';
 import {maxMtpDepth,normalizeSweep} from '../src/mtp-sweep';
-import {cacheQuants} from '../src/cache-quant';
+import {cacheQuants,flashOn,needsFlashAttention} from '../src/cache-quant';
 export function integer(n:unknown,min:number,max:number,name:string){if(typeof n!=='number'||!Number.isInteger(n)||n<min||n>max)throw Error(`${name} must be an integer from ${min} to ${max}.`);}
 export function validateSettings(s:SettingsUpdate){validateUrl(s.baseUrl);integer(s.timeoutSec,1,86400,'Request timeout');integer(s.loadTimeoutSec,10,3600,'Load timeout');if(typeof s.lmsPath!=='string'||typeof s.judgePrompt!=='string'||typeof s.updateCheck!=='boolean')throw Error('Invalid settings');
  validateLmsPath(s.lmsPath);
@@ -39,6 +39,11 @@ export function validateConfig(c:RunConfig,packs:BenchmarkPack[]=builtInPacks){
   throw Error('The runtime must be one of LM Studio’s installed engines, named engine@version.');
  for(const [name,q] of [['K cache',c.cacheK],['V cache',c.cacheV]] as const)
   if(q!==undefined&&!cacheQuants.includes(q))throw Error(`Invalid ${name} quantization. Choose one of: ${cacheQuants.join(', ')}.`);
+ if(c.flashAttention!==undefined&&!['on','off'].includes(c.flashAttention))throw Error('Invalid flash attention setting.');
+ // Caught here rather than sent to LM Studio, which refuses the load with a message that names
+ // neither setting: llama.cpp cannot use a quantized KV cache without flash attention.
+ if(needsFlashAttention(c.cacheK??'off',c.cacheV??'off')&&!flashOn(c.flashAttention))
+  throw Error('A quantized KV cache needs flash attention. Turn flash attention on, or set both caches to f16 or off.');
  if(!Array.isArray(c.modelKeys)||!c.modelKeys.length)throw Error('Select at least one model.');
  if(!Array.isArray(c.concurrency)||!c.concurrency.length)throw Error('Enter concurrency levels.');
  c.concurrency=[...new Set(c.concurrency)].sort((a,b)=>a-b);c.concurrency.forEach(n=>integer(n,1,256,'Concurrency'));

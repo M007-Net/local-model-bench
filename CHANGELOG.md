@@ -6,6 +6,37 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.15.0 — 2026-09-17
+
+### Changed
+
+- **Flash attention is on by default, and a run states it rather than inheriting it.**
+  It was only ever turned on as a side effect of quantizing the cache, so every other
+  run took whatever LM Studio happened to have set — which is not a neutral choice.
+  Measured on Gemma 4 26B A4B at f16 cache, changing nothing else:
+
+  | Engine | Flash | Prompt processing | Fixed cost per request |
+  | --- | --- | --- | --- |
+  | ROCm | off | 260 tok/s | 7.1 s |
+  | ROCm | on | 1281 tok/s | 0.06 s |
+  | Vulkan | off | 277 tok/s | 9.2 s |
+  | Vulkan | on | 1822 tok/s | 0.10 s |
+
+  That is about five times the prompt processing and the difference between seconds and
+  milliseconds before a first token, on both engines. It also explains an earlier
+  reading of these runs: ROCm looked slower than Vulkan only because every fast ROCm run
+  happened to have quantized its cache, which forced flash attention on.
+
+  **Use flash attention** on the Run screen is on unless turned off, written to LM
+  Studio's per-model configuration for each load and restored afterwards, and checked
+  against what LM Studio reports before anything is measured. Turning it off is a
+  supported choice — it is the only way to measure the cost — and the run warns what it
+  will do. A quantized cache with flash attention off is refused up front, because
+  llama.cpp cannot do it and LM Studio's refusal names neither setting.
+
+  Runs saved before this leave the field unset and were measured under whatever LM
+  Studio had at the time, so they are not evidence either way.
+
 ## 1.14.0 — 2026-09-17
 
 ### Added

@@ -67,13 +67,18 @@ export type Restore=()=>void;
 // `off` leaves both keys written as unchecked rather than absent, so a cache type the user last
 // picked in LM Studio's own window cannot leak into a run that asked for an unquantized cache.
 // That is the whole point of measuring: the run gets the setting the run asked for.
-export function applyCacheQuant(model:Model,k:CacheQuant,v:CacheQuant,home=homedir()):Restore{
+//
+// Flash attention is written on every load for the same reason, and because leaving it to whatever
+// LM Studio happened to have set is not a neutral choice. Measured on Gemma 4 26B A4B at f16 cache,
+// changing nothing else: with it off, prompt processing fell from 1281 to 260 tok/s on ROCm and from
+// 1822 to 277 on Vulkan, and a fixed cost of 7.1 s and 9.2 s respectively appeared before the first
+// token of every request. A run that does not say otherwise gets it on.
+export function applyCacheQuant(model:Model,k:CacheQuant,v:CacheQuant,flash:boolean,home=homedir()):Restore{
  const file=cacheConfigPath(modelResource(model,home),home),existed=existsSync(file),original=existed?readFileSync(file):null;
  const config=original?shape(original):{preset:'',operation:{fields:[]},load:{fields:[]}};
- const flash=needsFlashAttention(k,v);
- const keep=(config.load.fields as {key?:unknown}[]).filter(f=>f&&typeof f.key==='string'&&f.key!==K_CACHE&&f.key!==V_CACHE&&(!flash||f.key!==FLASH));
+ const keep=(config.load.fields as {key?:unknown}[]).filter(f=>f&&typeof f.key==='string'&&f.key!==K_CACHE&&f.key!==V_CACHE&&f.key!==FLASH);
  const field=(key:string,q:CacheQuant)=>({key,value:q==='off'?{checked:false,value:'f16'}:{checked:true,value:q}});
- config.load.fields=[...keep,...(flash?[{key:FLASH,value:true}]:[]),field(K_CACHE,k),field(V_CACHE,v)];
+ config.load.fields=[...keep,{key:FLASH,value:flash},field(K_CACHE,k),field(V_CACHE,v)];
  mkdirSync(path.dirname(file),{recursive:true});
  writeFileSync(file,JSON.stringify(config,null,2));
  let done=false;
@@ -86,8 +91,14 @@ export function applyCacheQuant(model:Model,k:CacheQuant,v:CacheQuant,home=homed
 
 // What LM Studio reports back after the load, so a run can refuse to measure a cache setting that
 // was asked for and not applied. LM Studio reports the instance config with the same value shape.
-export function verifyCacheQuant(config:Record<string,unknown>,k:CacheQuant,v:CacheQuant):void{
- if(k==='off'&&v==='off')return; // Nothing was requested, so there is nothing to confirm.
+export function verifyCacheQuant(config:Record<string,unknown>,k:CacheQuant,v:CacheQuant,flash?:boolean):void{
+ // Flash attention is always requested now, so it is always checked — a load that came back without
+ // the setting the run asked for would be measuring something else entirely, and the difference is
+ // large enough (five times the prompt processing) to invalidate the numbers rather than dent them.
+ const flashGot=(config as any).flash_attention;
+ if(flash!==undefined&&typeof flashGot==='boolean'&&flashGot!==flash)
+  throw Error(`LM Studio loaded the model with flash attention ${flashGot?'on':'off'}, not ${flash?'on':'off'} as the run asked. No measurements were taken.`);
+ if(k==='off'&&v==='off')return; // No cache type was requested, so there is nothing more to confirm.
  const got=(key:string):string=>{
   const raw=(config as any)[key];
   if(raw===undefined||raw===null)return 'unreported';

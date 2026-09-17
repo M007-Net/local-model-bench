@@ -24,7 +24,7 @@ function mockAdapter(opts:{supported?:boolean|null;rates?:Record<number,number[]
  let instance='',instanceConfig:Record<string,unknown>={},depth=0,parallel=1,context=2048;
  const model={key:'mock',display_name:'Mock',format:'gguf',type:'llm',size_bytes:100,quantization:null,max_context_length:8192,loaded_instances:[],
   nativeMtp:{supported:opts.supported===undefined?true:opts.supported,reason:'test fixture'}} as unknown as Model;
- const adapter:Adapter={
+ const adapter:Adapter={cacheQuant:()=>()=>{},
   models:async()=>[{...model,loaded_instances:instance?[{id:instance,config:{context_length:context,parallel,...instanceConfig}}]:[]}],
   cli:async(_s,args)=>{
    // Stands in for a runtime that can load the model but not its prediction heads.
