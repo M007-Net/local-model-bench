@@ -6,6 +6,25 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.14.0 — 2026-09-17
+
+### Added
+
+- **The server does not have to be this machine.** The endpoint was restricted to
+  loopback, so LM Studio on another PC, a box on the LAN, or anything else speaking the
+  same API could not be benchmarked from here. Any http:// or https:// address is now
+  accepted. What is still refused is anything that is not an origin: credentials in the
+  URL, which belong in the API token field where they are encrypted at rest and never
+  reach the window, and a path, query or fragment, which would change what the address
+  means.
+
+  Pointing somewhere else changes what this app can honestly claim, so it says so rather
+  than leaving the old promise on screen. The sidebar reads **Remote endpoint** with the
+  host instead of *Your prompts stay on this PC*, and the settings field warns that
+  prompts, responses and any token will leave the machine — noting when a plain http
+  address means they travel unencrypted. The badge follows the saved setting, not what is
+  being typed, so it describes where runs actually go.
+
 ## 1.13.0 — 2026-09-17
 
 ### Changed
