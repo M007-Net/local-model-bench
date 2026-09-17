@@ -81,3 +81,34 @@ test('a cache setting LM Studio did not apply stops the run before anything is m
  assert.throws(()=>verifyCacheQuant({k_cache_quantization_type:'f16'},'q8_0','q8_0'),/loaded the K cache as f16/);
  assert.throws(()=>verifyCacheQuant({v_cache_quantization_type:{checked:false,value:'f16'}},'off','q4_0'),/loaded the V cache as off/);
 });
+
+// The bug that made every quantized-cache run fail on a real machine: LM Studio refuses the load
+// with "V Cache Quantization requires flash attention to be enabled" and its default cannot be
+// relied on, so the flag has to be written alongside the cache fields rather than assumed.
+test('asking for a quantized cache also turns on the flash attention it requires',()=>{
+ const {home,config}=library();
+ const restore=applyCacheQuant(base,'q8_0','q4_0',home);
+ assert.equal(valueOf(config,'llm.load.llama.flashAttention'),true,'flash attention written with the cache');
+ assert.equal(fields(config).filter(f=>f.key==='llm.load.llama.flashAttention').length,1,'written once, not duplicated');
+ restore();
+ assert.equal(existsSync(config),false);
+});
+
+test('a run that does not quantize leaves the user’s own flash-attention setting alone',()=>{
+ const {home,config}=library();
+ mkdirSync(path.dirname(config),{recursive:true});
+ writeFileSync(config,JSON.stringify({load:{fields:[{key:'llm.load.llama.flashAttention',value:false}]}}));
+ applyCacheQuant(base,'off','off',home);
+ assert.equal(valueOf(config,'llm.load.llama.flashAttention'),false,'untouched when nothing was asked for');
+ // f16 is not a quantization either, so it does not force the flag on.
+ applyCacheQuant(base,'f16','f16',home);
+ assert.equal(valueOf(config,'llm.load.llama.flashAttention'),false);
+});
+
+test('a load that came back without flash attention is refused rather than measured',()=>{
+ assert.throws(()=>verifyCacheQuant({flash_attention:false},'q8_0','q8_0'),/without flash attention/);
+ // Not requested, so not checked; and an engine that does not report it is not assumed to have failed.
+ assert.doesNotThrow(()=>verifyCacheQuant({flash_attention:false},'off','off'));
+ assert.doesNotThrow(()=>verifyCacheQuant({},'q8_0','q8_0'));
+ assert.doesNotThrow(()=>verifyCacheQuant({flash_attention:true},'q8_0','q8_0'));
+});

@@ -2,6 +2,7 @@ import {existsSync,mkdirSync,readFileSync,readdirSync,rmdirSync,unlinkSync,write
 import {homedir} from 'node:os';
 import path from 'node:path';
 import type {Model} from '../src/types';
+import {needsFlashAttention} from '../src/cache-quant';
 import type {CacheQuant} from '../src/cache-quant';
 
 // Quantizing the KV cache. The context is what actually fills a 16 GB card: a run loaded with
@@ -22,6 +23,13 @@ import type {CacheQuant} from '../src/cache-quant';
 //   {"key":"llm.load.llama.kCacheQuantizationType","value":{"checked":true,"value":"q8_0"}}
 const K_CACHE='llm.load.llama.kCacheQuantizationType';
 const V_CACHE='llm.load.llama.vCacheQuantizationType';
+// llama.cpp cannot use a quantized KV cache without flash attention, and LM Studio refuses the load
+// outright rather than falling back: "V Cache Quantization requires flash attention to be enabled."
+// Its default is not dependable — it varies by engine and by whatever the model was last loaded
+// with — so a run that asks for a quantized cache writes the flag that makes it possible, in the
+// same file and for the same single load. Nothing is written when the cache is left alone, so a
+// run that did not ask for this never touches the user's own flash-attention setting.
+const FLASH='llm.load.llama.flashAttention';
 const CONFIG_ROOT=['.lmstudio','.internal','user-concrete-model-default-config'];
 
 // Resolved from LM Studio's own index rather than built from the model key, because the key is a
@@ -62,9 +70,10 @@ export type Restore=()=>void;
 export function applyCacheQuant(model:Model,k:CacheQuant,v:CacheQuant,home=homedir()):Restore{
  const file=cacheConfigPath(modelResource(model,home),home),existed=existsSync(file),original=existed?readFileSync(file):null;
  const config=original?shape(original):{preset:'',operation:{fields:[]},load:{fields:[]}};
- const keep=(config.load.fields as {key?:unknown}[]).filter(f=>f&&typeof f.key==='string'&&f.key!==K_CACHE&&f.key!==V_CACHE);
+ const flash=needsFlashAttention(k,v);
+ const keep=(config.load.fields as {key?:unknown}[]).filter(f=>f&&typeof f.key==='string'&&f.key!==K_CACHE&&f.key!==V_CACHE&&(!flash||f.key!==FLASH));
  const field=(key:string,q:CacheQuant)=>({key,value:q==='off'?{checked:false,value:'f16'}:{checked:true,value:q}});
- config.load.fields=[...keep,field(K_CACHE,k),field(V_CACHE,v)];
+ config.load.fields=[...keep,...(flash?[{key:FLASH,value:true}]:[]),field(K_CACHE,k),field(V_CACHE,v)];
  mkdirSync(path.dirname(file),{recursive:true});
  writeFileSync(file,JSON.stringify(config,null,2));
  let done=false;
@@ -88,6 +97,9 @@ export function verifyCacheQuant(config:Record<string,unknown>,k:CacheQuant,v:Ca
  };
  // LM Studio reports these under snake_case names in the instance config it returns.
  const kGot=got('k_cache_quantization_type'),vGot=got('v_cache_quantization_type');
+ // Without flash attention a quantized cache cannot be in use, whatever the cache fields say.
+ if(needsFlashAttention(k,v)&&(config as any).flash_attention===false)
+  throw Error('LM Studio loaded the model without flash attention, which a quantized KV cache requires. No measurements were taken.');
  // An engine that does not report the fields at all is not proof of failure, so it is not treated
  // as one; anything it does report has to match, or the numbers would describe another setting.
  if(kGot!=='unreported'&&kGot!==k)throw Error(`LM Studio loaded the K cache as ${kGot}, not the requested ${k}. No measurements were taken.`);

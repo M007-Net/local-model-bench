@@ -6,6 +6,21 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.10.1 — 2026-09-17
+
+### Fixed
+
+- **Quantizing the context made every load fail.** llama.cpp cannot use a quantized
+  key/value cache without flash attention, and LM Studio refuses the load outright
+  rather than falling back: *"V Cache Quantization requires flash attention to be
+  enabled."* 1.10.0 wrote the cache fields and assumed flash attention was already on,
+  which is not dependable — it varies by engine and by whatever the model was last
+  loaded with. A run that asks for a quantized cache now writes the flag that makes it
+  possible, into the same per-model configuration, for the same single load, and
+  restores it with the rest. A run that leaves the cache alone does not touch the
+  setting at all. A load that comes back reporting no flash attention is refused
+  before anything is measured, rather than reporting a cache that was not in use.
+
 ## 1.10.0 — 2026-09-17
 
 ### Added

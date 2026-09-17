@@ -382,8 +382,10 @@ whether a run measures the GPU or measures a spill into system RAM.
 
 **Quantize the context (KV cache)** sets the K and V caches independently to q8_0,
 q5_0, q4_0, iq4_nl or f16. K tolerates quantization less well than V, so q8_0 for K
-with something smaller for V is the usual choice. It needs flash attention, which
-LM Studio turns on by default.
+with something smaller for V is the usual choice. llama.cpp cannot use a quantized
+cache without flash attention and LM Studio refuses the load outright rather than
+falling back, so a run that asks for one turns flash attention on for each load it
+makes, in the same file and with the same restore.
 
 LM Studio exposes no command-line flag for this, so the setting is written into its
 own per-model configuration for the length of one load and the file is put back byte

@@ -1,6 +1,6 @@
 {
   "name": "local-model-bench",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "Private desktop benchmarks and transparent grading for LM Studio models",
   "author": "Local Model Bench contributors",
   "license": "MIT",
