@@ -1,7 +1,7 @@
 import {useMemo,useState} from 'react';
 import type {Run} from './types';
 import {summaries} from '../electron/export';
-import {chartSpecs,renderChart,legendHtml,scoreLabels,type ChartRow,type ScoreSource} from './charts';
+import {chartSpecs,renderChart,legendHtml,scoreLabels,xAxisLabels,type ChartRow,type ScoreSource,type XAxis} from './charts';
 import {measuredDepths,mtpDepthText} from './mtp-sweep';
 import type {HistoryRow} from './history';
 import {backendOf} from '../electron/runtime';
@@ -11,11 +11,11 @@ import {overlayOptions,overlayRows,stillOffered} from './chart-compare';
 const depthSuffix=' · MTP ';
 // The legend, graph grid, and hover tooltip are shared by the single-run graphs and the history overview,
 // which feeds in pooled rows keyed by group label instead of by model key.
-export function ChartGrid({rows,score,onModel,hint='Click a point to inspect its model and responses.'}:{rows:ChartRow[];score:ScoreSource;onModel?:(key:string)=>void;hint?:string}){
+export function ChartGrid({rows,score,onModel,xAxis='concurrency',hint='Click a point to inspect its model and responses.'}:{rows:ChartRow[];score:ScoreSource;onModel?:(key:string)=>void;xAxis?:XAxis;hint?:string}){
  const [tip,setTip]=useState('');
  const show=(target:EventTarget)=>{const point=(target as Element).closest?.('[data-tooltip]');setTip(point?.getAttribute('data-tooltip')??'');};
  return <><div className="legend chart-legend" dangerouslySetInnerHTML={{__html:legendHtml(rows)}}/>
- <div className="chart-grid" onMouseOver={e=>show(e.target)} onMouseLeave={()=>setTip('')} onFocus={e=>show(e.target)} onBlur={()=>setTip('')} onClick={e=>{const key=(e.target as Element).closest('[data-model]')?.getAttribute('data-model');if(key)onModel?.(key);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){const key=(e.target as Element).getAttribute('data-model');if(key){e.preventDefault();onModel?.(key);}}}}>{chartSpecs(score).map(spec=><section className="panel auto-chart" key={spec.key}><h3>{spec.title}</h3><p className="hint">{spec.description}</p><div dangerouslySetInnerHTML={{__html:renderChart(rows,spec,score)}}/></section>)}</div>
+ <div className="chart-grid" onMouseOver={e=>show(e.target)} onMouseLeave={()=>setTip('')} onFocus={e=>show(e.target)} onBlur={()=>setTip('')} onClick={e=>{const key=(e.target as Element).closest('[data-model]')?.getAttribute('data-model');if(key)onModel?.(key);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){const key=(e.target as Element).getAttribute('data-model');if(key){e.preventDefault();onModel?.(key);}}}}>{chartSpecs(score).map(spec=><section className="panel auto-chart" key={spec.key}><h3>{spec.title}</h3><p className="hint">{spec.description}</p><div dangerouslySetInnerHTML={{__html:renderChart(rows,spec,score,xAxis)}}/></section>)}</div>
  {tip&&<div className="graph-tooltip" role="tooltip">{tip}<small>{hint}</small></div>}
  </>;
 }
@@ -25,12 +25,19 @@ export function ChartsPanel({run,onModel,history=[]}:{run:Run;onModel?:(key:stri
  // history being reloaded underneath it.
  const [compare,setCompare]=useState<string[]>([]);
  const chosen=run.tests.some(t=>t.id===testId)?testId:run.tests[0]?.id;
- // A sweep measures one model at several prediction depths, so each depth becomes its own line.
- // Without this the graph would join points taken under different settings into one curve.
+ // Depths measured by this run. With more than one, the graphs can read across depth instead of
+ // across concurrency — which is the only way to see a sweep run at a single concurrency level.
+ const depths=useMemo(()=>measuredDepths(run),[run]);
+ const [xAxis,setXAxis]=useState<XAxis>('concurrency');
+ // A run with one depth has no depth axis to offer, and one that loses its sweep while selected
+ // must not keep drawing an axis that no longer varies.
+ const axis:XAxis=depths.length>1?xAxis:'concurrency';
  const own=useMemo(()=>{
   const all=summaries(run).filter(r=>r.testId===chosen);
-  return measuredDepths(run).length>1?all.map(r=>({...r,modelKey:`${r.modelKey} · ${mtpDepthText(r.mtpDepth)}`})):all;
- },[run,chosen]);
+  // Depth goes into the series name only when it is not the axis. Doing both would split each
+  // model into one flat single-point line per depth rather than a curve across them.
+  return depths.length>1&&axis!=='mtpDepth'?all.map(r=>({...r,modelKey:`${r.modelKey} · ${mtpDepthText(r.mtpDepth)}`})):all;
+ },[run,chosen,depths,axis]);
  const backend=useMemo(()=>backendOf(run).label,[run]);
  const models=useMemo(()=>[...new Set(summaries(run).map(r=>r.modelKey))],[run]);
  const options=useMemo(()=>overlayOptions(history,run.id,chosen??'',backend,models),[history,run.id,chosen,backend,models]);
@@ -41,6 +48,7 @@ export function ChartsPanel({run,onModel,history=[]}:{run:Run;onModel?:(key:stri
  const backends=options.filter(o=>o.kind==='backend'),others=options.filter(o=>o.kind==='model');
  const toggle=(id:string)=>setCompare(c=>c.includes(id)?c.filter(x=>x!==id):[...c,id]);
  return <section className="automatic-charts"><div className="section-heading"><div><h2>Automatic graphs</h2><p className="hint">Updated as requests and grades arrive. Hover over a point for its values.</p></div><div className="chart-controls"><label>Test<select aria-label="Chart test" value={chosen} onChange={e=>setTestId(e.target.value)}>{run.tests.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Score source<select aria-label="Quality score source" value={score} onChange={e=>setScore(e.target.value as ScoreSource)}>{Object.entries(scoreLabels).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label>
+  {depths.length>1&&<label>Read across<select aria-label="Chart horizontal axis" value={axis} onChange={e=>setXAxis(e.target.value as XAxis)}>{(Object.keys(xAxisLabels) as XAxis[]).map(v=><option key={v} value={v}>{v==='mtpDepth'?'Maximum predictions':'Concurrent requests'}</option>)}</select></label>}
   {/* Saved measurements of the same test, drawn on the same axes. The control is absent entirely
       when nothing comparable is saved, rather than an empty menu that invites a click. */}
   {options.length>0&&<details className="compare-menu"><summary aria-label="Compare with saved measurements">Compare with{live.length?` · ${live.length}`:''}</summary>
@@ -51,6 +59,6 @@ export function ChartsPanel({run,onModel,history=[]}:{run:Run;onModel?:(key:stri
     <p className="hint">Saved rows from finished runs, drawn as their own lines. Nothing is recalculated, and conditions can differ between runs.</p>
    </div></details>}
  </div></div>
- <ChartGrid rows={rows} score={score} onModel={key=>onModel?.(key.split(depthSuffix)[0])}/>
+ <ChartGrid rows={rows} score={score} xAxis={axis} onModel={key=>onModel?.(key.split(depthSuffix)[0])}/>
  </section>;
 }

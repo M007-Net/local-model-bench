@@ -8,6 +8,13 @@ const fmt=(n:number)=>n.toLocaleString('en-US',{maximumFractionDigits:n<1?2:1});
 export function colorFor(key:string){let hash=0;for(const c of key)hash=(Math.imul(hash,31)+c.charCodeAt(0))|0;return `hsl(${Math.abs(hash)%360}, 65%, 72%)`;}
 type Metric='generationTps'|'estimatedPrefillTps'|'throughput'|'ttftMs'|'medianMs'|'p95Ms'|'failureRate'|ScoreSource;
 export type ChartSpec={key:Metric|'scatter';title:string;unit:string;description:string;scale?:number;fixedMax?:number};
+// What the horizontal axis counts. Concurrency is the historical answer and stays the default, but
+// an MTP sweep at a single concurrency level has nothing to spread along it: every depth lands on
+// the same x and the series stack on one vertical line. Depth is the axis that run varies.
+export type XAxis='concurrency'|'mtpDepth';
+export const xAxisLabels:Record<XAxis,string>={concurrency:'Concurrent requests',mtpDepth:'Maximum predictions (0 = MTP off)'};
+// A row from a run that measured no depth sits at 0, which is where "MTP off" belongs anyway.
+export const xValueOf=(r:ChartRow,axis:XAxis):number=>axis==='mtpDepth'?(r.mtpDepth??0):r.concurrency;
 export function chartSpecs(score:ScoreSource):ChartSpec[]{return [
  {key:'generationTps',title:'Generation speed',unit:'Tokens / second',description:'Average speed per successful request. Higher is faster.'},
  {key:'estimatedPrefillTps',title:'Estimated prefill speed',unit:'Tokens / second',description:'Client-timed prompt processing; caching and buffering can affect this estimate.'},
@@ -21,13 +28,13 @@ export function chartSpecs(score:ScoreSource):ChartSpec[]{return [
 ];}
 const start=(label:string)=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 290" role="img" aria-label="${escapeHtml(label)}"><style>text{font:12px 'Segoe UI',sans-serif;fill:#aab9bf}.grid{stroke:#334149;stroke-dasharray:3 5}.point{cursor:help}</style>`;
 const empty=(label:string)=>`${start(label)}<text x="300" y="132" text-anchor="middle">No measurements available yet</text><text x="300" y="158" text-anchor="middle">Missing values are not plotted as zero.</text></svg>`;
-export function renderChart(rows:ChartRow[],spec:ChartSpec,score:ScoreSource='objective'):string{
+export function renderChart(rows:ChartRow[],spec:ChartSpec,score:ScoreSource='objective',xAxis:XAxis='concurrency'):string{
  const scatter=spec.key==='scatter';
  const val=(r:ChartRow):number|null=>{const n=scatter?r[score]:r[spec.key as Metric];return typeof n==='number'&&Number.isFinite(n)?n*(spec.scale??1):null;};
  const usable=rows.filter(r=>val(r)!==null&&(!scatter||r.generationTps!==null));
  if(!usable.length)return empty(spec.title);
  const yMax=scatter?100:spec.fixedMax??Math.max(1,...usable.map(r=>val(r)!*1.08));
- const allXs=[...new Set(rows.map(r=>r.concurrency))].sort((a,b)=>a-b);
+ const allXs=[...new Set(rows.map(r=>xValueOf(r,xAxis)))].sort((a,b)=>a-b);
  const xMin=scatter?0:Math.min(...allXs),xMax=scatter?Math.max(1,...usable.map(r=>r.generationTps!))*1.08:Math.max(...allXs);
  const x=(v:number)=>xMax===xMin?320:72+(v-xMin)/(xMax-xMin)*496;
  const y=(v:number)=>230-v/yMax*184;
@@ -36,15 +43,15 @@ export function renderChart(rows:ChartRow[],spec:ChartSpec,score:ScoreSource='ob
  // Limit labels to a readable subset without changing numeric axis spacing.
  const ticks=scatter?[0,.25,.5,.75,1].map(t=>t*xMax):allXs.filter((_,i)=>allXs.length<=8||i===allXs.length-1||i%Math.ceil(allXs.length/7)===0);
  for(const t of ticks)svg+=`<text x="${x(t)}" y="250" text-anchor="middle">${fmt(t)}</text>`;
- svg+=`<text x="320" y="278" text-anchor="middle">${scatter?'Generation tokens / second':'Concurrent requests'}</text>`;
+ svg+=`<text x="320" y="278" text-anchor="middle">${scatter?'Generation tokens / second':xAxisLabels[xAxis]}</text>`;
  const keys=[...new Set(rows.map(r=>r.modelKey))].sort();
  keys.forEach((key,i)=>{
-  const rs=rows.filter(r=>r.modelKey===key).sort((a,b)=>a.concurrency-b.concurrency),color=colorFor(key);
+  const rs=rows.filter(r=>r.modelKey===key).sort((a,b)=>xValueOf(a,xAxis)-xValueOf(b,xAxis)),color=colorFor(key);
   let segment:string[]=[];
   const flush=()=>{if(segment.length>1)svg+=`<polyline points="${segment.join(' ')}" fill="none" stroke="${color}" stroke-width="2.5" ${i%2?'stroke-dasharray="7 3"':''}/>`;segment=[];};
-  if(!scatter){for(const r of rs){const v=val(r);if(v===null){flush();continue;}segment.push(`${x(r.concurrency)},${y(v)}`);}flush();}
-  for(const r of rs){const v=val(r);if(v===null||(scatter&&r.generationTps===null))continue;const cx=x(scatter?r.generationTps!:r.concurrency),cy=y(v);const title=`${r.modelKey} • concurrency ${r.concurrency} • ${scatter?fmt(r.generationTps!)+' tok/s • ':''}${fmt(v)} ${scatter?'score':spec.unit} • ${r.requests} requests, ${r.failures} failures`;
-   svg+=`<circle class="point" cx="${cx}" cy="${cy}" r="${scatter?6:4.5}" fill="${color}" stroke="#141c20" stroke-width="1.5" tabindex="0" role="button" data-model="${escapeHtml(r.modelKey)}" data-concurrency="${r.concurrency}" data-tooltip="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title></circle>`;
+  if(!scatter){for(const r of rs){const v=val(r);if(v===null){flush();continue;}segment.push(`${x(xValueOf(r,xAxis))},${y(v)}`);}flush();}
+  for(const r of rs){const v=val(r);if(v===null||(scatter&&r.generationTps===null))continue;const cx=x(scatter?r.generationTps!:xValueOf(r,xAxis)),cy=y(v);const title=`${r.modelKey} • ${xAxis==='mtpDepth'?(r.mtpDepth?`${r.mtpDepth} draft token${r.mtpDepth===1?'':'s'}`:'MTP off')+` • concurrency ${r.concurrency}`:`concurrency ${r.concurrency}`} • ${scatter?fmt(r.generationTps!)+' tok/s • ':''}${fmt(v)} ${scatter?'score':spec.unit} • ${r.requests} requests, ${r.failures} failures`;
+   svg+=`<circle class="point" cx="${cx}" cy="${cy}" r="${scatter?6:4.5}" fill="${color}" stroke="#141c20" stroke-width="1.5" tabindex="0" role="button" data-model="${escapeHtml(r.modelKey)}" data-concurrency="${r.concurrency}" data-mtp-depth="${r.mtpDepth??''}" data-tooltip="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title></circle>`;
   }
  });return svg+'</svg>';
 }

@@ -6,6 +6,21 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.11.0 — 2026-09-17
+
+### Added
+
+- **The graphs can read across MTP depth.** They always plotted against concurrent
+  requests, which is the right axis for a concurrency sweep and the wrong one for a
+  prediction-depth sweep: a sweep run at a single concurrency level put every depth at
+  the same horizontal position, so six depths drew six dots stacked on one vertical
+  line and the only trace of the depth was a legend entry. **Read across** on the
+  Automatic graphs now switches the horizontal axis to maximum predictions, turning
+  each model into one curve over its depths. It appears only when a run measured more
+  than one depth, and depth stops being folded into the series name while it is the
+  axis, so a model is one line rather than one flat point per depth. The concurrency
+  axis is unchanged for every other run.
+
 ## 1.10.1 — 2026-09-17
 
 ### Fixed
