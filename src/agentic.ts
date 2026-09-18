@@ -7,6 +7,8 @@
 // byte-for-byte identical across models, worker counts and machines; only the model call changes.
 import {average} from '../electron/metrics';
 import {integer} from './validate';
+import {cacheQuants,needsFlashAttention,type CacheQuant} from './cache-quant';
+import type {Model} from './types';
 
 export const agenticStages = ['llm','scaffold','compile','test','ast','hash','package'] as const;
 export type AgenticStage = typeof agenticStages[number];
@@ -34,8 +36,14 @@ export type AgenticTurn={index:number;lane:number;start:number;end:number;segmen
 // `turns` is the trace of that median repeat, so the timeline shows a representative run rather
 // than the luckiest one.
 export type AgenticPoint={workers:number;lanes:number;wallMs:number;wallSamples:number[];completed:number;failed:number;turns:AgenticTurn[]};
-export type AgenticConfig={name:string;modelKey:string;modelName:string;modelCall:'on'|'off';turns:number;workers:number[];repeats:number;hostWorkScale:number;maxTokens:number;contextLength:number;temperature:number;reasoning:string;timeoutSec:number;prompt:string};
-export type AgenticRun={id:string;created:string;updated:string;status:'running'|'completed'|'cancelled'|'failed'|'interrupted';config:AgenticConfig;environment:Record<string,unknown>;logs:string[];points:AgenticPoint[];error?:string;gpu?:import('./types').RunGpu};
+// `instance` decides where the model comes from: 'load' starts a fresh one with the settings below,
+// 'loaded' attaches to something already running in LM Studio and changes none of its settings.
+export type InstanceSource='load'|'loaded';
+export type AgenticConfig={name:string;modelKey:string;modelName:string;modelCall:'on'|'off';instance:InstanceSource;instanceId:string;turns:number;workers:number[];repeats:number;hostWorkScale:number;maxTokens:number;contextLength:number;temperature:number;reasoning:string;timeoutSec:number;prompt:string;cacheK:CacheQuant;cacheV:CacheQuant;flashAttention:'on'|'off'};
+// What the sweep was actually pointed at, captured when it starts so a saved sweep still says which
+// file it measured after the library has changed underneath it.
+export type AgenticModelInfo={key:string;displayName:string;quantization:string|null;sizeBytes:number|null;format:string|null;architecture:string|null;maxContext:number|null;vision:boolean|null;params:string|null;instanceId:string|null;instanceConfig:Record<string,unknown>|null;source:InstanceSource};
+export type AgenticRun={id:string;created:string;updated:string;status:'running'|'completed'|'cancelled'|'failed'|'interrupted';config:AgenticConfig;model?:AgenticModelInfo;environment:Record<string,unknown>;logs:string[];points:AgenticPoint[];error?:string;gpu?:import('./types').RunGpu};
 export type AgenticSummary=Omit<AgenticRun,'points'>;
 export type AgenticProgress={runId:string;phase:string;message:string;workers:number;completedTurns:number;totalTurns:number;pointIndex:number;pointCount:number};
 
@@ -73,7 +81,12 @@ export function humanDuration(ms:number){
  const m=Math.round(s/60);
  return m<90?`${m} min`:`${(m/60).toFixed(1)} h`;
 }
-export const defaultAgenticConfig:AgenticConfig={name:'',modelKey:'',modelName:'',modelCall:'off',turns:48,workers:[1,2,4,8,16,32],repeats:3,hostWorkScale:4,maxTokens:256,contextLength:4096,temperature:0,reasoning:'default',timeoutSec:300,prompt:defaultPrompt};
+// The KV cache defaults to q4_0 for both halves. A sweep loads one instance with a parallel slot
+// per worker, so the cache is precisely the part of the memory that grows with the worker count:
+// at 32 workers an f16 cache is four times the size of a q4_0 one, and that is usually what decides
+// whether the highest worker counts stay on the GPU or quietly spill into system RAM and measure
+// something else. Flash attention is on because llama.cpp cannot use a quantized cache without it.
+export const defaultAgenticConfig:AgenticConfig={name:'',modelKey:'',modelName:'',modelCall:'off',instance:'load',instanceId:'',turns:48,workers:[1,2,4,8,16,32],repeats:3,hostWorkScale:4,maxTokens:256,contextLength:4096,temperature:0,reasoning:'default',timeoutSec:300,prompt:defaultPrompt,cacheK:'q4_0',cacheV:'q4_0',flashAttention:'on'};
 // One phrasing for "what produced these numbers", shared by the panel, the run environment record,
 // and every export, so a user comparing a CSV to the screen sees the same words.
 export const modelCallLabel=(c:AgenticConfig)=>c.modelCall==='on'?c.modelName||c.modelKey||'unnamed model':'disabled (host-side work only)';
@@ -86,6 +99,13 @@ export function validateAgenticConfig(c:AgenticConfig){
  if(!c||typeof c!=='object')throw Error('Invalid agent sweep configuration.');
  if(c.modelCall!=='on'&&c.modelCall!=='off')throw Error('Model call must be on or off.');
  if(c.modelCall==='on'&&!c.modelKey)throw Error('Choose a model, or turn the model call off for a CPU-only trace.');
+ if(c.instance!=='load'&&c.instance!=='loaded')throw Error('The model must either be loaded for this sweep or already loaded in LM Studio.');
+ if(c.modelCall==='on'&&c.instance==='loaded'&&!c.instanceId.trim())throw Error('Choose which loaded instance to use.');
+ for(const [name,quant] of [['K cache',c.cacheK],['V cache',c.cacheV]] as const)if(!cacheQuants.includes(quant))throw Error(`${name} quantization is not one LM Studio accepts.`);
+ if(c.flashAttention!=='on'&&c.flashAttention!=='off')throw Error('Flash attention must be on or off.');
+ // llama.cpp will not use a quantized KV cache without flash attention and LM Studio refuses the
+ // load rather than falling back, so this is caught here instead of being sent to fail.
+ if(c.instance==='load'&&needsFlashAttention(c.cacheK,c.cacheV)&&c.flashAttention==='off')throw Error('A quantized KV cache needs flash attention on. Turn flash attention on, or set both cache halves to off or f16.');
  integer(c.turns,1,4096,'Agent turns');
  if(!Array.isArray(c.workers)||!c.workers.length)throw Error('Choose at least one worker count.');
  c.workers=[...new Set(c.workers)].sort((a,b)=>a-b);
@@ -197,6 +217,11 @@ export function validateAgenticRun(value:unknown):AgenticRun{
  if(!Array.isArray(run.logs)||run.logs.some(l=>typeof l!=='string'))throw Error('The sweep log is malformed.');
  if(!run.environment||typeof run.environment!=='object'||Array.isArray(run.environment))throw Error('The sweep has no environment record.');
  validateAgenticConfig(run.config);
+ if(run.model!==undefined){
+  const m=run.model as AgenticModelInfo;
+  if(!m||typeof m!=='object'||Array.isArray(m))throw Error('The sweep\u2019s model record is malformed.');
+  if(typeof m.key!=='string'||typeof m.displayName!=='string')throw Error('The sweep\u2019s model record has no identity.');
+ }
  if(!Array.isArray(run.points))throw Error('The sweep has no measurements.');
  if(run.points.length>64)throw Error('The sweep has more worker counts than this app can hold.');
  const seen=new Set<number>();
@@ -229,6 +254,24 @@ export function validateAgenticRun(value:unknown):AgenticRun{
 }
 // An imported sweep that measured a different workload is shown, but never silently compared.
 export const comparableWorkload=(run:{environment:Record<string,unknown>})=>run.environment.workloadVersion===undefined||run.environment.workloadVersion===WORKLOAD_VERSION;
+
+// Everything worth saying about the model a sweep measured, read once from LM Studio's own record.
+export function describeModel(model:Model,config:AgenticConfig,instanceConfig:Record<string,unknown>|null,instanceId:string|null):AgenticModelInfo{
+ const text=(v:unknown)=>typeof v==='string'&&v.trim()?v.trim():null;
+ const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>0?v:null;
+ return {
+  key:model.key,displayName:model.display_name,
+  quantization:model.quantization?.name??null,
+  sizeBytes:number(model.size_bytes),
+  format:text(model.format),
+  architecture:text(model.architecture)??text((model as {arch?:unknown}).arch),
+  maxContext:number(model.max_context_length),
+  vision:typeof model.capabilities?.vision==='boolean'?model.capabilities.vision:null,
+  params:text((model as {params_string?:unknown}).params_string)??text((model as {parameters?:unknown}).parameters),
+  instanceId,instanceConfig,source:config.instance
+ };
+}
+export const cacheText=(c:AgenticConfig)=>c.cacheK===c.cacheV?`${c.cacheK} K and V`:`${c.cacheK} K \u00b7 ${c.cacheV} V`;
 
 export function laneRows(point:AgenticPoint){
  const rows=new Map<number,AgenticTurn[]>();

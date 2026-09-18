@@ -6,6 +6,39 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.17.0 — 2026-09-18
+
+### Added
+
+- **The agent sweep says what it measured, and can measure a model you already have loaded.**
+
+  A saved sweep now carries a **Model under test** panel read from LM Studio's own record when the
+  sweep started: quantization, parameters, architecture, format, file size, the model's context
+  limit, vision support, the instance identifier and the context and parallel slots it was loaded
+  with. Anything LM Studio does not report stays unreported rather than being guessed from the model
+  name. The quantization also appears in the header strip, in the CSV, in the Markdown export and in
+  the HTML report, so a sweep filed away for later still says which file produced it.
+
+  **Use a model already loaded in LM Studio** is now a choice beside loading one for the sweep.
+  Nothing about a chosen instance is changed — not its context, its parallel slots or its cache — and
+  it is left loaded when the sweep ends. If the sweep asks for more workers than that instance serves
+  at once, the run log says so plainly: the flattening above that point is LM Studio's queue rather
+  than this machine's ceiling, and the two mean different things.
+
+### Changed
+
+- **The KV cache now defaults to q4_0 for both halves, with flash attention on.** A sweep loads one
+  instance with a parallel slot per worker, so the cache is precisely the part of the memory that
+  grows with the worker count: at 32 workers an f16 cache is four times the size of a q4_0 one, and
+  that is usually what decides whether the highest worker counts stay on the GPU or quietly spill
+  into system RAM and measure something else entirely. K and V can be set independently, as on the
+  Run screen. A quantized cache with flash attention off is refused before the load, because
+  llama.cpp cannot do it and LM Studio's refusal names neither setting. A cache type LM Studio did
+  not actually apply fails the sweep before a single turn is measured.
+
+  This does not apply when attaching to an instance that was already loaded: that instance keeps
+  whatever it was loaded with, and the sweep reports it rather than changing it.
+
 ## 1.16.0 — 2026-09-18
 
 ### Added

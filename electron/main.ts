@@ -120,6 +120,7 @@ async function newAgenticRun(config:AgenticConfig){
  agenticWorker=new Worker(path.join(__dirname,'agentic-worker.cjs'),{workerData:{run,settings:settings(),vendorDir,gpuIntervalMs:1000}});
  agenticWorker.on('message',(event:AgenticEvent)=>{try{
   if(event.type==='point')store.saveAgenticPoint(run.id,event.point);
+  if(event.type==='model'){run.model=event.model;store.saveAgenticRun(run);}
   if(event.type==='log'){run.logs.push(new Date().toLocaleTimeString()+' '+event.message);store.saveAgenticRun(run);}
   if(event.type==='environment'){run.environment=event.environment;store.saveAgenticRun(run);}
   if(event.type==='gpu'){run.gpu=event.gpu;store.saveAgenticRun(run);}

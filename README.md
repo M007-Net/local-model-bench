@@ -32,7 +32,7 @@ AI provider.
 - [Build from source](#build-from-source) — only if you want to compile it yourself
 - [Choose the engine, and compare engines](#choose-the-engine-and-compare-engines-1100) — which llama.cpp build, and setting two side by side
 - [Quantize the context](#quantize-the-context-1100) — the memory that grows with concurrency
-- [Agent worker sweep](#agent-worker-sweep-1160) — what this PC does with the answers, and where more agents stop helping
+- [Agent worker sweep](#agent-worker-sweep-1170) — what this PC does with the answers, and where more agents stop helping
 
 Everything after that is reference material. You do not need it to get going.
 
@@ -398,7 +398,7 @@ prompt processing (569 tok/s to 519 tok/s). Quantizing the cache also changes wh
 the model attends to, so treat quality scores from a quantized-cache run as measured
 under that setting rather than as comparable to an f16 run.
 
-## Agent worker sweep (1.16.0)
+## Agent worker sweep (1.17.0)
 
 A token-per-second number describes the model. It does not describe what happens when you point several coding agents at one machine, because most of an agent turn is not the model call. The **Agents** page measures that directly, and it is the page to use when comparing two CPUs.
 
@@ -424,6 +424,23 @@ Each figure carries the spread measured across its own repeats. **A gap between 
 **Speedup and efficiency need a one-worker point in the same sweep.** Include `1w`, or both stay unavailable rather than being estimated from another point. Efficiency slightly above 1.00 is a real reading rather than an error: with several workers busy, a large shared cache keeps generated sources resident that a lone worker has to fetch from memory again — which is exactly the kind of difference this sweep exists to expose.
 
 **Comparing two machines.** Export a sweep as **JSON** on one machine and use **Import** on the other. The imported sweep is validated field by field, stored under a fresh identifier, labelled with the machine it came from, and never re-run locally. It then appears as a dashed comparison line on the scaling chart. Sweeps recorded by a build with a different **workload version** measured different work; they are shown with a warning and left out of the comparison lines rather than plotted as if comparable.
+
+**What was measured.** A saved sweep carries a **Model under test** panel taken from LM Studio's own
+record: quantization, parameters, architecture, format, file size, the model's context limit, vision
+support, and the context and parallel slots the instance was loaded with. Anything LM Studio does not
+report stays unreported rather than being guessed from the model name, and the same facts travel into
+the CSV, the Markdown export and the HTML report.
+
+**The KV cache defaults to q4_0 for both halves, with flash attention on.** A sweep loads one instance
+with a parallel slot per worker, so the cache is the part of the memory that grows with the worker
+count — at 32 workers an f16 cache is four times the size of a q4_0 one, which is usually what decides
+whether the highest worker counts stay on the GPU. K and V can be set independently. A quantized cache
+with flash attention off is refused before the load, because llama.cpp cannot do it.
+
+**Use a model already loaded in LM Studio** is a choice beside loading one for the sweep. Nothing about
+that instance is changed — not its context, its slots or its cache — and it is left loaded afterwards.
+If the sweep asks for more workers than the instance serves at once, the run log says so: the
+flattening above that point is LM Studio's queue, not this machine's ceiling.
 
 **Model call off** runs the host side on its own. Nothing is loaded, LM Studio is not contacted, and the result is this machine's own ceiling for agent work — useful on its own and as the baseline for a run with the model call on. **Model call on** loads your selected model with one parallel slot per worker, exactly as the benchmark runner does, so the context each turn gets is the configured context and the instance is loaded with that figure multiplied by the highest worker count.
 

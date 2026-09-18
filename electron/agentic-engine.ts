@@ -5,14 +5,17 @@ import os from 'node:os';
 import path from 'node:path';
 import type {Model,RunGpu,Settings} from '../src/types';
 import type {AgenticConfig,AgenticPoint,AgenticProgress,AgenticRun,AgenticSegment,AgenticTurn,HostStage} from '../src/agentic';
-import {WORKLOAD_VERSION,hostStages,modelCallLabel,validateAgenticConfig} from '../src/agentic';
+import {WORKLOAD_VERSION,cacheText,describeModel,hostStages,modelCallLabel,validateAgenticConfig} from '../src/agentic';
+import type {AgenticModelInfo} from '../src/agentic';
+import {cacheQuantText,flashOn,needsFlashAttention} from '../src/cache-quant';
+import {applyCacheQuant,verifyCacheQuant} from './cache-quant';
 import {serverContext} from '../src/defaults';
 import {api,cli,infer,listModels} from './lmstudio';
 import {idleSampler,type GpuSampler} from './gpu';
 
-export type AgenticEvent={type:'point';point:AgenticPoint}|{type:'progress';progress:AgenticProgress}|{type:'log';message:string}|{type:'environment';environment:Record<string,unknown>}|{type:'gpu';gpu:RunGpu}|{type:'finish';status:AgenticRun['status'];error?:string};
+export type AgenticEvent={type:'model';model:AgenticModelInfo}|{type:'point';point:AgenticPoint}|{type:'progress';progress:AgenticProgress}|{type:'log';message:string}|{type:'environment';environment:Record<string,unknown>}|{type:'gpu';gpu:RunGpu}|{type:'finish';status:AgenticRun['status'];error?:string};
 export type HostRunner={run(turnIndex:number,scale:number,stages:HostStage[]):Promise<number[]>;stop():void;note:string;threads:number};
-export type AgenticAdapter={models:typeof listModels;cli:typeof cli;infer:typeof infer;api:typeof api};
+export type AgenticAdapter={models:typeof listModels;cli:typeof cli;infer:typeof infer;api:typeof api;cacheQuant?:typeof applyCacheQuant};
 const real:AgenticAdapter={models:listModels,cli,infer,api};
 export const hostWorkerFile=(dir:string)=>path.join(dir,'agentic-host.cjs');
 
@@ -115,19 +118,50 @@ export async function runAgenticSweep(run:AgenticRun,settings:Settings,signal:Ab
    const models=await adapter.models(settings);
    model=models.find(m=>m.key===config.modelKey)??null;
    if(!model)throw Error('Downloaded model not found: '+config.modelKey);
-   const parallel=Math.max(...config.workers),total=serverContext(config.contextLength,parallel);
-   if(model.max_context_length>0&&total>model.max_context_length)throw Error(`${model.display_name} supports ${model.max_context_length} context tokens; ${parallel} parallel slots at ${config.contextLength} tokens each need ${total}. Lower the context length or the highest worker count.`);
-   owned=`lmb-agents-${run.id.slice(0,8)}-${randomUUID().slice(0,8)}`;
-   progress('loading',`Loading ${model.display_name} with ${parallel} parallel slots and ${total} context tokens…`,parallel);
-   await adapter.cli(settings,['load',config.modelKey,'--identifier',owned,'--context-length',String(total),'--parallel',String(parallel),'--yes'],signal);
-   const fresh=await adapter.models(settings);
-   const loadedInstance=fresh.find(m=>m.loaded_instances.some(i=>i.id===owned))?.loaded_instances.find(i=>i.id===owned);
-   if(!loadedInstance)throw Error('Loaded instance was not returned by LM Studio. Check that the CLI and API address use the same server.');
-   if(loadedInstance.config.parallel!==parallel||loadedInstance.config.context_length!==total)throw Error(`Loaded settings differ: requested parallel=${parallel}, context=${total}; received parallel=${loadedInstance.config.parallel??'unknown'}, context=${loadedInstance.config.context_length}. No measurements were taken.`);
-   instance=owned;
-   log(`${model.display_name}: ${parallel} parallel slots share ${total} context tokens, ${config.contextLength} per concurrent turn.`);
+   const parallel=Math.max(...config.workers);
+   let instanceConfig:Record<string,unknown>|null=null;
+   if(config.instance==='loaded'){
+    // Attaching to something already running. Nothing about it is changed — not its context, not
+    // its parallel slots, not its cache — so the sweep reports what it found and leaves it loaded.
+    const found=models.flatMap(m=>m.loaded_instances.map(i=>({m,i}))).find(({i})=>i.id===config.instanceId);
+    if(!found)throw Error(`No instance called ${config.instanceId} is loaded in LM Studio any more. Refresh the list or load the model for this sweep instead.`);
+    if(found.m.key!==config.modelKey)throw Error(`Instance ${config.instanceId} is ${found.m.display_name}, not the selected ${model.display_name}. No measurements were taken.`);
+    instance=found.i.id;instanceConfig=found.i.config as Record<string,unknown>;
+    const slots=typeof found.i.config.parallel==='number'?found.i.config.parallel:null;
+    const context=found.i.config.context_length;
+    log(`Using the instance already loaded in LM Studio: ${config.instanceId}. Its settings were not changed and it is left loaded when the sweep ends.`);
+    log(`That instance reports ${slots===null?'an unknown number of':slots} parallel slot(s) and ${context} context tokens${slots!==null?`, about ${Math.floor(context/Math.max(1,slots))} per concurrent turn`:''}.`);
+    // A sweep asking for more workers than the server can serve at once still produces a curve, but
+    // the plateau in it would be LM Studio's queue rather than this machine's, so it is said plainly.
+    if(slots!==null&&slots<parallel)log(`Warning: this sweep goes up to ${parallel} workers but that instance serves ${slots} at a time, so model calls above ${slots} queue inside LM Studio. The flattening above ${slots} workers describes the server, not this machine.`);
+   }else{
+    const total=serverContext(config.contextLength,parallel);
+    if(model.max_context_length>0&&total>model.max_context_length)throw Error(`${model.display_name} supports ${model.max_context_length} context tokens; ${parallel} parallel slots at ${config.contextLength} tokens each need ${total}. Lower the context length or the highest worker count.`);
+    const flash=flashOn(config.flashAttention);
+    if(needsFlashAttention(config.cacheK,config.cacheV)&&!flash)throw Error('A quantized KV cache needs flash attention on. No measurements were taken.');
+    owned=`lmb-agents-${run.id.slice(0,8)}-${randomUUID().slice(0,8)}`;
+    progress('loading',`Loading ${model.display_name} with ${parallel} parallel slots and ${total} context tokens…`,parallel);
+    // The cache is the part of a sweep's memory that grows with the worker count: one instance holds
+    // contextLength × workers tokens of keys and values. LM Studio has no flag for the cache type, so
+    // it goes through its per-model configuration for this one load and is put straight back.
+    log(`KV cache: ${cacheQuantText(config.cacheK,config.cacheV)}. Written to LM Studio's per-model configuration for this load only and restored immediately afterwards.`);
+    log(`Flash attention: ${flash?'on':'off'}.`);
+    const undoCache=(adapter.cacheQuant??applyCacheQuant)(model,config.cacheK,config.cacheV,flash);
+    try{await adapter.cli(settings,['load',config.modelKey,'--identifier',owned,'--context-length',String(total),'--parallel',String(parallel),'--yes'],signal);}
+    finally{undoCache?.();}
+    const fresh=await adapter.models(settings);
+    const loadedInstance=fresh.find(m=>m.loaded_instances.some(i=>i.id===owned))?.loaded_instances.find(i=>i.id===owned);
+    if(!loadedInstance)throw Error('Loaded instance was not returned by LM Studio. Check that the CLI and API address use the same server.');
+    if(loadedInstance.config.parallel!==parallel||loadedInstance.config.context_length!==total)throw Error(`Loaded settings differ: requested parallel=${parallel}, context=${total}; received parallel=${loadedInstance.config.parallel??'unknown'}, context=${loadedInstance.config.context_length}. No measurements were taken.`);
+    // A cache type LM Studio did not apply is refused before a single turn is measured: the whole
+    // point of choosing it was to decide how much room the sweep needs.
+    verifyCacheQuant(loadedInstance.config as Record<string,unknown>,config.cacheK,config.cacheV,flash);
+    instance=owned;instanceConfig=loadedInstance.config as Record<string,unknown>;
+    log(`${model.display_name}: ${parallel} parallel slots share ${total} context tokens, ${config.contextLength} per concurrent turn.`);
+   }
+   emit({type:'model',model:describeModel(model,config,instanceConfig,instance)});
    progress('warmup','Warming up the model (excluded from the sweep)…',parallel);
-   const warm=await adapter.infer({...settings,timeoutSec:config.timeoutSec},instance,'Reply with the word ready.',32,0,config.reasoning,signal);
+   const warm=await adapter.infer({...settings,timeoutSec:config.timeoutSec},instance!,'Reply with the word ready.',32,0,config.reasoning,signal);
    if(warm.status!=='completed')throw Error(`Warm-up failed: ${warm.error}`);
   }else log('Model call off: this sweep measures host-side agent work only. Nothing was loaded and no GPU work was requested.');
 
@@ -186,7 +220,7 @@ export async function runAgenticSweep(run:AgenticRun,settings:Settings,signal:Ab
    const spread=ordered.length>1?` (${ordered.length} repeats spanning ${(ordered[0].wallMs/1000).toFixed(2)}–${(ordered[ordered.length-1].wallMs/1000).toFixed(2)} s)`:'';
    log(`${workers} worker(s): ${median.turns.length-failed} of ${config.turns} turns completed, median ${(median.wallMs/1000).toFixed(2)} s${spread}.`);
   }
-  emit({type:'environment',environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,availableParallelism:os.availableParallelism?.()??os.cpus().length,hostThreads:host.threads,totalMemory:os.totalmem(),node:process.versions.node,workloadVersion:WORKLOAD_VERSION,modelCall:modelCallLabel(config),hostWorkNote:'Host stage workloads are seeded from the turn index and never include model output. No generated code is executed.'}});
+  emit({type:'environment',environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,availableParallelism:os.availableParallelism?.()??os.cpus().length,hostThreads:host.threads,totalMemory:os.totalmem(),node:process.versions.node,workloadVersion:WORKLOAD_VERSION,modelCall:modelCallLabel(config),kvCache:config.modelCall==='on'?(config.instance==='loaded'?'set by the instance already loaded':cacheText(config)):'not applicable',modelInstance:config.modelCall==='on'?(config.instance==='loaded'?'already loaded in LM Studio; left loaded':'loaded for this sweep and unloaded afterwards'):'none',hostWorkNote:'Host stage workloads are seeded from the turn index and never include model output. No generated code is executed.'}});
   emit({type:'finish',status:signal.aborted?'cancelled':failures?'failed':'completed',...(failures?{error:`${failures} agent turn(s) failed. See the run log.`}:{})});
  }catch(e){emit({type:'finish',status:signal.aborted?'cancelled':'failed',error:(e as Error).message});}
  finally{await cleanup();host.stop();try{emit({type:'gpu',gpu:gpu.summary(runStart,Date.now())});}catch{}gpu.stop();}
