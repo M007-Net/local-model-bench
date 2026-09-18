@@ -1,15 +1,29 @@
 {
   "name": "local-model-bench",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "description": "Private desktop benchmarks and transparent grading for LM Studio models",
   "author": "Local Model Bench contributors",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/M007-Net/local-model-bench" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/M007-Net/local-model-bench"
+  },
   "homepage": "https://github.com/M007-Net/local-model-bench#readme",
-  "bugs": { "url": "https://github.com/M007-Net/local-model-bench/issues" },
+  "bugs": {
+    "url": "https://github.com/M007-Net/local-model-bench/issues"
+  },
   "private": true,
-  "keywords": ["lm-studio", "benchmark", "llm", "electron", "windows", "local-ai"],
-  "engines": { "node": ">=22" },
+  "keywords": [
+    "lm-studio",
+    "benchmark",
+    "llm",
+    "electron",
+    "windows",
+    "local-ai"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -19,7 +33,10 @@
     "start": "electron .",
     "dev": "npm run build && electron .",
     "package": "npm run build && electron-builder --win nsis --x64 && node scripts/checksums.mjs",
-    "qa": "node scripts/qa.mjs"
+    "qa": "node scripts/qa.mjs",
+    "qa:agents": "node scripts/qa-agents.mjs",
+    "qa:agents:packaged": "node scripts/qa-agents-packaged.mjs",
+    "agents:calibrate": "tsx scripts/agent-calibrate.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

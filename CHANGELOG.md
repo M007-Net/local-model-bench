@@ -6,6 +6,53 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.16.0 — 2026-09-18
+
+### Added
+
+- **An Agents page that measures what this machine does with a model's answers.**
+  A tokens-per-second number describes the model. It does not describe what happens when
+  several coding agents share one PC, because most of an agent turn is not the model call.
+
+  One **agent turn** is one model call followed by the host-side stages an agent actually
+  runs with the answer: scaffold, compile, run tests, analyze AST, hash, package. A
+  **sweep** replays the same fixed set of turns at each worker count you choose and records
+  where every stage of every turn started and ended. The worker timeline is one lane per
+  parallel worker; clicking a stage isolates it and clicking a bar opens that turn.
+
+  The page states the two numbers that separate one CPU from another — per-core speed, and
+  the whole chip's peak turns per minute — each with the spread measured across its own
+  repeats, so a gap smaller than those bands reads as a tie rather than a win.
+
+  **Model call off** needs no model, no LM Studio and no GPU: every millisecond measured is
+  this machine doing agent work. **Model call on** loads the selected model with one
+  parallel slot per worker, the same way the benchmark runner does.
+
+  Sweeps export to CSV, JSON, Markdown and a self-contained offline HTML report, and a
+  sweep from another PC can be imported to draw both curves together.
+
+### Measurement notes
+
+- Each worker count is replayed several times and the **median** is reported, with the
+  spread between repeats in its own column. One measurement cannot separate a real
+  difference between two machines from ordinary run-to-run noise.
+- A discarded warm-up pass runs at the highest worker count before anything is measured,
+  and each measured repeat is preceded by a short idle gap, so a one-worker point is not
+  measured on a chip still recovering from a thirty-two-worker one.
+- A whole turn's host stages are dispatched together and timed on the thread that ran
+  them, so a segment is that stage's own cost. Time spent waiting for a free host thread
+  is reported separately as **queued time**. Dispatching each stage individually cost
+  about a fifth of a turn when only one worker was running and nothing when every core was
+  busy, which inflated the single-worker baseline and every speedup derived from it.
+- The generated corpus is deliberately larger than a core's private cache, so cache and
+  memory behaviour show up in the curve rather than only per-core arithmetic throughput.
+- Host stage workloads are generated from the turn index. They are identical on every
+  machine, model and worker count, and never include or execute model output.
+- If the stage worker is missing from a build the sweep fails outright rather than running
+  single-threaded, because a single-threaded sweep would still draw a scaling curve and
+  that curve would read as a verdict about the machine. `npm run qa:agents:packaged`
+  checks this inside the installed application.
+
 ## 1.15.0 — 2026-09-17
 
 ### Changed

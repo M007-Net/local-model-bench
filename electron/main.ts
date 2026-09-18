@@ -22,12 +22,17 @@ import { spawn } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { chartReport } from './chart-report';
 import type { EngineEvent } from './engine';
+import type { AgenticConfig, AgenticProgress, AgenticRun } from '../src/agentic';
+import { defaultAgenticConfig, validateAgenticConfig, validateAgenticRun } from '../src/agentic';
+import type { AgenticEvent } from './agentic-engine';
+import { agenticReport, agenticText } from './agentic-export';
 import {builtInPacks,describePack,selectBenchmark} from '../src/benchmarks';
 import {buildPack,maxPackBytes,packExtensions,parsePackFile,suggestScoring,type PackDraft,type PackItem} from '../src/benchmark-import';
 import {readFileSync,statSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 
 let win:BrowserWindow,store:Store,worker:Worker|null=null,progress:Progress|null=null,activeRun:Run|null=null;
+let agenticWorker:Worker|null=null,agenticProgress:AgenticProgress|null=null;
 // Pooling every run re-reads every saved response, so the result is held until a run, a grade, or a saved
 // model correction actually changes it.
 let historyCache:{fingerprint:string;rows:ReturnType<typeof historyRows>}|null=null;
@@ -79,13 +84,52 @@ function storedSettings():StoredSettings{const saved=store.get<StoredSettings>('
 function settings():Settings{const saved=storedSettings();let token='';if(saved.encryptedToken){try{token=safeStorage.decryptString(Buffer.from(saved.encryptedToken,'base64'));}catch{}}const {encryptedToken,...plain}=saved;return {...plain,token};}
 function publicSettings():PublicSettings{const {encryptedToken,token,...plain}=storedSettings();return {...plain,tokenConfigured:!!encryptedToken};}
 function notify(){win?.webContents.send('bench:progress',progress);}
+function notifyAgentic(){win?.webContents.send('bench:agenticProgress',agenticProgress);}
 // The packs compiled into the build plus whatever you imported. Imported packs are always last, so a file can
 // never take over the id of a published benchmark.
 const allPacks=()=>[...builtInPacks,...store.packs()];
 // A chosen file is parsed and held here until you confirm the name and scoring, so nothing is stored from a
 // file you only looked at, and the questions do not cross the boundary twice.
 let pendingPack:{items:PackItem[];fileName:string}|null=null;
-function assertIdle(){if(worker)throw Error('A run is active. Cancel it or wait for it to finish.');}
+// A benchmark and an agent sweep both load a model instance and saturate the machine, so only one
+// may ever run. Every place that needs to know about work in progress goes through `busyWorkers`
+// rather than each enumerating the worker variables for itself.
+const busyWorkers=()=>[worker,agenticWorker].filter((w):w is Worker=>!!w);
+function assertIdle(){if(worker)throw Error('A run is active. Cancel it or wait for it to finish.');if(agenticWorker)throw Error('An agent sweep is active. Cancel it or wait for it to finish.');}
+// Same atomic write as the benchmark export: a failure part-way through a direct write leaves a
+// truncated file that looks complete.
+async function saveExport(title:string,name:string,format:string,render:(format:string)=>string){
+ if(!['html','csv','json','md'].includes(format))throw Error('Invalid export');
+ const target=await dialog.showSaveDialog(win,{title,defaultPath:`${name}.${format}`,filters:[{name:format.toUpperCase(),extensions:[format]}]});
+ if(target.canceled||!target.filePath)return null;
+ const temp=target.filePath+'.part';
+ try{writeFileSync(temp,render(format),'utf8');renameSync(temp,target.filePath);}
+ catch(e){rmSync(temp,{force:true});throw Error(`Could not write ${target.filePath}: ${(e as Error).message}`);}
+ return target.filePath;
+}
+async function newAgenticRun(config:AgenticConfig){
+ assertIdle();
+ const clean=validateAgenticConfig({...defaultAgenticConfig,...config,name:(config.name??'').trim()});
+ if(clean.modelCall==='on'){const models=await listModels(settings());const model=models.find(m=>m.key===clean.modelKey);if(!model)throw Error('Selected model no longer available: '+clean.modelKey);clean.modelName=model.display_name;}
+ else clean.modelName='';
+ const now=new Date().toISOString();
+ const run:AgenticRun={id:randomUUID(),created:now,updated:now,status:'running',config:{...clean,name:clean.name||new Date().toLocaleString()},environment:{},logs:[],points:[]};
+ store.saveAgenticRun(run);
+ agenticProgress={runId:run.id,phase:'starting',message:'Preparing the agent sweep…',workers:clean.workers[0],completedTurns:0,totalTurns:clean.turns*clean.workers.length*clean.repeats,pointIndex:0,pointCount:clean.workers.length};
+ notifyAgentic();
+ agenticWorker=new Worker(path.join(__dirname,'agentic-worker.cjs'),{workerData:{run,settings:settings(),vendorDir,gpuIntervalMs:1000}});
+ agenticWorker.on('message',(event:AgenticEvent)=>{try{
+  if(event.type==='point')store.saveAgenticPoint(run.id,event.point);
+  if(event.type==='log'){run.logs.push(new Date().toLocaleTimeString()+' '+event.message);store.saveAgenticRun(run);}
+  if(event.type==='environment'){run.environment=event.environment;store.saveAgenticRun(run);}
+  if(event.type==='gpu'){run.gpu=event.gpu;store.saveAgenticRun(run);}
+  if(event.type==='progress'){agenticProgress=event.progress;notifyAgentic();}
+  if(event.type==='finish'){run.status=event.status;run.error=event.error;run.updated=new Date().toISOString();store.saveAgenticRun(run);}
+ }catch(e){run.status='failed';run.error='Could not persist sweep event: '+(e as Error).message;agenticWorker?.postMessage('cancel');store.saveAgenticRun(run);}});
+ agenticWorker.on('error',e=>{run.status='failed';run.error=e.message;store.saveAgenticRun(run);});
+ agenticWorker.on('exit',()=>{if(run.status==='running'){run.status='interrupted';store.saveAgenticRun(run);}agenticWorker=null;agenticProgress=null;notifyAgentic();});
+ return run.id;
+}
 function getPair(runId:string,sampleId:string){const run=store.getRun(runId),sample=run.samples.find(s=>s.id===sampleId);if(!sample)throw Error('Response not found');const test=run.tests.find(t=>t.id===sample.testId);if(!test)throw Error('Test snapshot not found');return {run,sample,test};}
 function launch(run:Run,retries?:Sample[],gradeOnly=false){assertIdle();activeRun=run;const previousStatus=run.status;run.status=gradeOnly?'grading':'running';run.updated=new Date().toISOString();store.saveRun(run);progress={runId:run.id,phase:'starting',message:'Preparing benchmark…',completed:0,total:0,active:0};notify();
  worker=new Worker(path.join(__dirname,'worker.cjs'),{workerData:{run,settings:settings(),retries,gradeOnly,vendorDir,gpuIntervalMs:1000}});
@@ -127,7 +171,29 @@ if(locked)app.whenReady().then(()=>{
   for(const t of store.tests())if(tolerant.has(t.id)&&!t.allowCodeFence)store.saveTest({...t,allowCodeFence:true});
   store.set('fence-tolerance-v1',true);
  }
- handle('snapshot',()=>({settings:publicSettings(),tests:store.tests(),runs:store.list(),progress,dataPath,packs:allPacks().map(describePack)}));
+ handle('snapshot',()=>({settings:publicSettings(),tests:store.tests(),runs:store.list(),progress,dataPath,packs:allPacks().map(describePack),host:{cpu:os.cpus()[0]?.model?.trim()??'',threads:os.availableParallelism?.()??os.cpus().length},agenticRuns:store.listAgentic(),agenticProgress}));
+ handle('startAgenticRun',(c:AgenticConfig)=>newAgenticRun(c));
+ handle('cancelAgenticRun',()=>{agenticWorker?.postMessage('cancel');if(agenticProgress){agenticProgress={...agenticProgress,message:'Cancelling the sweep and unloading any model it loaded…'};notifyAgentic();}});
+ handle('getAgenticRun',(id:string)=>store.getAgenticRun(id));
+ handle('deleteAgenticRun',(id:string)=>{if(agenticProgress?.runId===id)throw Error('That sweep is still running. Cancel it first.');store.deleteAgenticRun(id);});
+ handle('exportAgenticRun',(id:string,format:string)=>{const run=store.getAgenticRun(id);return saveExport('Export agent sweep',`Local-Model-Bench-agents-${id.slice(0,8)}`,format,f=>f==='html'?agenticReport(run):agenticText(run,f));});
+ // Comparing two machines means bringing another machine's sweep here. The file is one this app did
+ // not write, so it is size-capped, fully validated, and stored under a fresh identifier that cannot
+ // collide with or overwrite a local sweep.
+ handle('importAgenticRun',async()=>{
+  assertIdle();
+  const picked=await dialog.showOpenDialog(win,{title:'Import an agent sweep',filters:[{name:'JSON',extensions:['json']}],properties:['openFile']});
+  if(picked.canceled||!picked.filePaths[0])return null;
+  const file=picked.filePaths[0];
+  if(statSync(file).size>256*1024*1024)throw Error('That sweep file is larger than 256 MB and was not imported.');
+  const run=validateAgenticRun(JSON.parse(readFileSync(file,'utf8')));
+  const imported={...run,id:randomUUID(),updated:new Date().toISOString(),gpu:undefined,
+   environment:{...run.environment,importedFrom:path.basename(file),importedAt:new Date().toISOString(),originalId:run.id},
+   logs:[...run.logs,`Imported from ${path.basename(file)}. Measurements are this file's; nothing was re-run here.`]};
+  store.saveAgenticRun(imported);
+  for(const point of imported.points)store.saveAgenticPoint(imported.id,point);
+  return imported.id;
+ });
  handle('modelProfiles',()=>store.profiles());
  handle('saveModelProfile',(key,profile)=>store.saveProfile(key,profile));
  handle('models',()=>listModels(settings()));
@@ -259,6 +325,9 @@ if(locked)app.whenReady().then(()=>{
  ses.setDisplayMediaRequestHandler((_request,callback)=>callback({}));
  win.loadFile(path.join(__dirname,'../dist/index.html'));
  win.webContents.once('did-finish-load',()=>{updateState={...updateState,current:app.getVersion()};checkForUpdate(false).catch(()=>{});});
- win.on('close',e=>{if(worker){e.preventDefault();dialog.showMessageBox(win,{type:'question',title:'Benchmark is running',message:'Cancel the active run and close?',detail:'Completed responses are already saved. The app will stop requests and unload its model before closing.',buttons:['Keep running','Cancel and close'],defaultId:0,cancelId:0}).then(({response})=>{if(response===1){worker?.postMessage('cancel');if(worker)worker.once('exit',()=>win.close());else win.close();}});}});
+ win.on('close',e=>{const busy=busyWorkers();if(busy.length){e.preventDefault();dialog.showMessageBox(win,{type:'question',title:'Benchmark is running',message:'Cancel the active run and close?',detail:'Completed responses are already saved. The app will stop requests and unload its model before closing.',buttons:['Keep running','Cancel and close'],defaultId:0,cancelId:0}).then(({response})=>{if(response!==1)return;
+  // Wait for every worker, not just the first: closing while one is still unloading a model would
+  // leave that instance loaded in LM Studio.
+  Promise.all(busy.map(w=>new Promise<void>(done=>{w.once('exit',()=>done());w.postMessage('cancel');}))).then(()=>win.close());});}});
 });
 app.on('window-all-closed',()=>app.quit());app.on('will-quit',()=>store?.close());

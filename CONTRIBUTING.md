@@ -38,6 +38,6 @@ needs its `role="progressbar"` values; dialogs get their focus handling from
 
 Tests must not download weights, select a developer's installed model, contact a cloud AI service, or write into the user's application-data directory. Use mock model identifiers and an isolated `LMB_DATA_DIR` for desktop checks. Live tests require an explicit `LMB_MODEL_KEY` and belong outside automated CI.
 
-Do not commit benchmark histories, model outputs, local paths, credentials, model files, databases, `work/`, or `outputs/`. Preserve third-party notices and dataset provenance. If a benchmark protocol changes, change its protocol identifier so the app will not present unlike runs as controlled comparisons.
+Do not commit benchmark histories, model outputs, local paths, credentials, model files, databases, `work/`, or `outputs/`. Preserve third-party notices and dataset provenance. If a benchmark protocol changes, change its protocol identifier so the app will not present unlike runs as controlled comparisons. The same rule covers the agent sweep: any change to the host stage workload or its cost must bump `WORKLOAD_VERSION` in `src/agentic.ts`, so sweeps recorded by two different builds are never plotted against each other.
 
 Keep scores narrowly described. A published dataset adapted to this app is not an official leaderboard result unless its complete official protocol is reproduced and documented.

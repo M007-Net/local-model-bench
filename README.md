@@ -32,6 +32,7 @@ AI provider.
 - [Build from source](#build-from-source) — only if you want to compile it yourself
 - [Choose the engine, and compare engines](#choose-the-engine-and-compare-engines-1100) — which llama.cpp build, and setting two side by side
 - [Quantize the context](#quantize-the-context-1100) — the memory that grows with concurrency
+- [Agent worker sweep](#agent-worker-sweep-1160) — what this PC does with the answers, and where more agents stop helping
 
 Everything after that is reference material. You do not need it to get going.
 
@@ -397,6 +398,47 @@ prompt processing (569 tok/s to 519 tok/s). Quantizing the cache also changes wh
 the model attends to, so treat quality scores from a quantized-cache run as measured
 under that setting rather than as comparable to an f16 run.
 
+## Agent worker sweep (1.16.0)
+
+A token-per-second number describes the model. It does not describe what happens when you point several coding agents at one machine, because most of an agent turn is not the model call. The **Agents** page measures that directly, and it is the page to use when comparing two CPUs.
+
+One **agent turn** is one model call followed by the host-side stages a coding agent actually runs with the answer: **scaffold**, **compile**, **run tests**, **analyze AST**, **hash**, **package**. A **sweep** replays the same fixed set of turns at each worker count you choose — 1, 2, 4, 8, 16 and up — and records where every stage of every turn started and ended.
+
+- **Worker timeline:** one lane per parallel worker, one bar per turn, one coloured segment per stage. Click a stage in the legend to isolate it; click a bar to open that turn's stage-by-stage breakdown. **Lock time axis to slowest run** keeps the same seconds-per-pixel across worker counts, so the picture shrinks as the machine keeps up and stops shrinking when it does not. **Sweep playhead** steps through the worker counts on its own.
+- **What is measured:** wall clock, throughput in agent turns per minute, speedup, efficiency per worker, mean turn latency, mean time queued for a free host thread, the off-GPU share, and the spread between repeats.
+- **Where it tops out:** **Throughput vs worker count** marks the peak and draws everything past it in red, because those workers cost more and returned no more turns. **All sweep points** lists every measurement; click a row to move the timeline to it.
+
+### The two numbers that separate one CPU from another
+
+Under the sweep table the app states both, because quoting one of them describes half the machine:
+
+- **Per-core speed** — how long one worker takes to finish an agent turn.
+- **Whole-chip throughput** — the peak turns per minute, at the worker count where it peaked, and how many times faster that is than one worker.
+
+Each figure carries the spread measured across its own repeats. **A gap between two machines smaller than those bands is a tie, not a win.**
+
+**Repeats.** Each worker count replays the whole turn set several times (three by default) and reports the **median**, with the spread between repeats in the **Spread %** column. One measurement cannot separate a real difference from ordinary run-to-run noise.
+
+**Warm-up and settle.** Before anything is measured, one full pass runs at the highest worker count and is discarded, so every pool thread has already compiled the stage code. Each measured repeat is then preceded by a short idle gap, so a one-worker point is not measured on a chip still recovering from a thirty-two-worker one. Neither the warm-up nor the gaps appear in any result.
+
+**Speedup and efficiency need a one-worker point in the same sweep.** Include `1w`, or both stay unavailable rather than being estimated from another point. Efficiency slightly above 1.00 is a real reading rather than an error: with several workers busy, a large shared cache keeps generated sources resident that a lone worker has to fetch from memory again — which is exactly the kind of difference this sweep exists to expose.
+
+**Comparing two machines.** Export a sweep as **JSON** on one machine and use **Import** on the other. The imported sweep is validated field by field, stored under a fresh identifier, labelled with the machine it came from, and never re-run locally. It then appears as a dashed comparison line on the scaling chart. Sweeps recorded by a build with a different **workload version** measured different work; they are shown with a warning and left out of the comparison lines rather than plotted as if comparable.
+
+**Model call off** runs the host side on its own. Nothing is loaded, LM Studio is not contacted, and the result is this machine's own ceiling for agent work — useful on its own and as the baseline for a run with the model call on. **Model call on** loads your selected model with one parallel slot per worker, exactly as the benchmark runner does, so the context each turn gets is the configured context and the instance is loaded with that figure multiplied by the highest worker count.
+
+### What the host stages are, and are not
+
+Host stage workloads are generated from the turn index with a fixed pseudo-random sequence. They are byte-for-byte identical across models, worker counts and machines, and they never include or execute model output — the model's answer is recorded with its turn and used for nothing else. That keeps a sweep a controlled comparison: only the model call changes between two runs of the same configuration.
+
+The corpus is deliberately larger than a core's private cache — about a megabyte of source per worker, with derived syntax trees several times that again — so a sweep at 16 or 32 workers pushes tens of megabytes through the shared cache. Cache and memory behaviour therefore show up in the curve rather than only per-core arithmetic throughput.
+
+Stages run on a pool of real threads sized to this machine, which is what makes parallel workers genuinely parallel rather than interleaved on one thread. A whole turn's stages are dispatched together and timed on the thread that ran them, so a segment is that stage's own cost. Time spent waiting for a free thread is reported separately as **queued time** and appears as the gap before a turn's first stage. Asking for more workers than the machine has threads is a valid experiment, not a mistake: queued time is where the extra workers go, and watching it grow while the wall clock stops improving is the plateau.
+
+If the stage worker is missing from the build the sweep fails outright rather than running single-threaded, because a single-threaded sweep would still draw a scaling curve and that curve would read as a verdict about the machine.
+
+Run `npm run agents:calibrate` to print what one turn's stages cost on your machine before choosing a **host work scale**. Sweeps are saved to the same local database as benchmark runs, appear as selectable pills, and export to CSV, JSON, Markdown, and a self-contained offline HTML report with the timelines and charts.
+
 ## Understanding the measurements
 
 - **Generation / request:** LM Studio's reported generation tokens per second for each request. Reasoning tokens are included where the server reports them.
@@ -477,7 +519,7 @@ npm run package # optional: writes the NSIS installer and SHA256SUMS.txt to outp
 `npm run build` has to come first. `npm test` and `npm run build` are the only two
 commands that need neither LM Studio nor a network connection.
 
-`npm run qa` checks desktop navigation, model discovery, and the test editor. It drives the real window against a running LM Studio, so it needs LM Studio started with at least one model downloaded, and it is deliberately not part of CI; without it the script stops with an explanation rather than a stack trace. Point it at another port with `LMB_QA_BASE_URL`. `npx tsx scripts/qa-gpu.ts` checks that the GPU thermals panel, timeline chart, and comparison column render from a seeded run. Live scripts use the exact model selected through `LMB_MODEL_KEY`; they contain no built-in model identifier. `node scripts/qa-results.mjs` exercises the desktop worker, clipboard grading, result charts, and exports. `node scripts/qa-custom-pack.mjs` imports a question file end to end and checks the preview, the scoring suggestion, CSV quoting, the question cap, and removal. `node scripts/qa-update.mjs` checks, entirely offline, that a default install requests nothing and that the update controls stay disarmed until a repository is saved. `node scripts/qa-history.mjs` seeds two saved runs of the same models at different concurrency and checks the run history overview: pooling, chip filters, regrouping, sorting, the mixed-condition warning, drill-through to a single run, and metadata corrections. Those validation scripts use separate data folders under `work/`.
+`npm run qa` checks desktop navigation, model discovery, and the test editor. It drives the real window against a running LM Studio, so it needs LM Studio started with at least one model downloaded, and it is deliberately not part of CI; without it the script stops with an explanation rather than a stack trace. Point it at another port with `LMB_QA_BASE_URL`. `npx tsx scripts/qa-gpu.ts` checks that the GPU thermals panel, timeline chart, and comparison column render from a seeded run. Live scripts use the exact model selected through `LMB_MODEL_KEY`; they contain no built-in model identifier. `node scripts/qa-results.mjs` exercises the desktop worker, clipboard grading, result charts, and exports. `node scripts/qa-custom-pack.mjs` imports a question file end to end and checks the preview, the scoring suggestion, CSV quoting, the question cap, and removal. `node scripts/qa-update.mjs` checks, entirely offline, that a default install requests nothing and that the update controls stay disarmed until a repository is saved. `node scripts/qa-history.mjs` seeds two saved runs of the same models at different concurrency and checks the run history overview: pooling, chip filters, regrouping, sorting, the mixed-condition warning, drill-through to a single run, and metadata corrections. `npm run qa:agents` runs a real host-only agent sweep end to end and checks the timeline, stage isolation, turn detail, and sweep table; it needs no LM Studio, no model and no GPU, so it does run in CI. `npm run qa:agents:packaged` repeats a sweep inside the installed application after `npm run package`, which is what proves the stage worker still runs in parallel from inside the packaged archive. Those validation scripts use separate data folders under `work/`.
 
 The Electron renderer is isolated and has no Node.js access, runs sandboxed
 behind a Content-Security-Policy, and is denied every permission request it could

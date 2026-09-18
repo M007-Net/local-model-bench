@@ -32,6 +32,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      # Runs a real host-only agent sweep through the packaged renderer. Needs no model and no GPU.
+      - run: npm run qa:agents
       # The lockfile is what `npm ci` installs from, so a change to package.json
       # without a regenerated lockfile would install something other than what it
       # claims to.

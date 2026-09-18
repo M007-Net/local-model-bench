@@ -38,7 +38,8 @@ export function gpuReport(gpu:RunGpu|undefined){
  const stats=gpu.stats;
  return `Device: ${gpu.device}\n\nReadings: ${stats.samples}, sampled every ${gpu.intervalMs} ms.\n\n`+gpuMetrics.map(key=>`- ${gpuMetricLabels[key]}: ${range(stats[key],gpuMetricUnits[key])}`).join('\n')+`\n- Peak memory in use: ${stats.memoryUsedMax===null?'Unavailable':stats.memoryUsedMax.toFixed(0)+' MB'}\n\n${gpu.note}`;
 }
-function cell(v:unknown){let s=v===null||v===undefined?'':String(v);if(/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}
+// Exported so every CSV this app writes shares one formula-injection guard.
+export function cell(v:unknown){let s=v===null||v===undefined?'':String(v);if(/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}
 export function exportText(run:Run,format:string){
  if(format==='json')return JSON.stringify(run,null,2);
  const rows=summaries(run);

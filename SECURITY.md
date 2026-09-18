@@ -40,6 +40,10 @@ Studio before reporting.
 - IPC handlers reject any sender that is not the application's own main frame.
 - Model output is treated as untrusted text throughout. It is never executed,
   and the judge prompt tells the grading model the same thing.
+- An imported agent sweep is an untrusted file. It is size-capped, validated field
+  by field before anything is stored, saved under a fresh identifier so it cannot
+  overwrite a local sweep, and never re-run: no part of it is executed. Its host
+  stage workload is generated from the turn index and never contains model output.
 - There are no automatic cloud requests and no analytics.
 - Update checking is off by default and makes no request until you name a GitHub
   repository in Settings. When enabled it contacts only `api.github.com` and

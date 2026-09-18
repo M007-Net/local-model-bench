@@ -6,7 +6,8 @@ import { parseRepo } from './update';
 import {builtInPacks,validateBenchmark,type BenchmarkPack} from '../src/benchmarks';
 import {maxMtpDepth,normalizeSweep} from '../src/mtp-sweep';
 import {cacheQuants,flashOn,needsFlashAttention} from '../src/cache-quant';
-export function integer(n:unknown,min:number,max:number,name:string){if(typeof n!=='number'||!Number.isInteger(n)||n<min||n>max)throw Error(`${name} must be an integer from ${min} to ${max}.`);}
+import {integer} from '../src/validate';
+export {integer} from '../src/validate';
 export function validateSettings(s:SettingsUpdate){validateUrl(s.baseUrl);integer(s.timeoutSec,1,86400,'Request timeout');integer(s.loadTimeoutSec,10,3600,'Load timeout');if(typeof s.lmsPath!=='string'||typeof s.judgePrompt!=='string'||typeof s.updateCheck!=='boolean')throw Error('Invalid settings');
  validateLmsPath(s.lmsPath);
  if(s.judgePrompt.length>20000)throw Error('The judge prompt is too long.');
