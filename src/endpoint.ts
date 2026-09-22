@@ -1,3 +1,8 @@
+import type { Settings } from './types';
+export type EndpointProvider = 'lmstudio'|'llamacpp'|'openai';
+export const providerLabel=(provider?:EndpointProvider)=>provider==='llamacpp'?'llama.cpp':provider==='openai'?'OpenAI-compatible':'LM Studio';
+export const isManagedEndpoint=(settings:Pick<Settings,'provider'>)=>!settings.provider||settings.provider==='lmstudio';
+export const canManageLocally=(settings:Pick<Settings,'provider'|'baseUrl'>)=>isManagedEndpoint(settings)&&isLoopbackUrl(settings.baseUrl);
 // Where this app sends prompts.
 //
 // Loopback is the default and the private case, but the endpoint is just an OpenAI-shaped HTTP API,
@@ -23,6 +28,6 @@ export function validateUrl(url: string): string {
   if (!u.hostname) throw Error('The endpoint needs a host, such as 127.0.0.1 or 192.168.1.50.');
   // A token belongs in the token field, where it is encrypted at rest and never crosses to the window.
   if (u.username || u.password) throw Error('Put credentials in the API token field rather than in the address.');
-  if (u.pathname !== '/' || u.search || u.hash) throw Error('Give only the server address, with no path, query or fragment — for example http://192.168.1.50:1234.');
+  if (!['/','/v1','/v1/'].includes(u.pathname) || u.search || u.hash) throw Error('Give only the server address, optionally ending in /v1, with no query or fragment — for example http://192.168.1.50:1234.');
   return u.origin;
 }

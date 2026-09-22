@@ -6,6 +6,48 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.18.2 — 2026-09-21
+
+### Fixed
+
+- Read llama.cpp model size, quantization, and context metadata when the server supplies it.
+- Skip malformed and duplicate compatible model entries.
+- Exclude selected external models from the other-loaded-model warning.
+- Show clean connection errors and dismiss success notices automatically.
+- Bring active benchmark progress into view when a run starts.
+
+## 1.18.1 — 2026-09-21
+
+### Fixed
+
+- Retries require the original endpoint and provider, preventing empty retries after switching servers.
+- Compatible judges can grade historical MTP runs; grades retain endpoint provenance.
+- Regrading preserves benchmark GPU telemetry and original failure details.
+- Switching endpoints clears the previous judge selection.
+- Packaging excludes sensor-driver files generated during telemetry checks.
+
+### Verified
+
+- Expanded endpoint fault, credential, export, persistence, and desktop regression coverage.
+- Live Gemma 4 12B inference passed through native and compatible LM Studio APIs.
+
+## 1.18.0 — 2026-09-20
+
+### Added
+
+- An explicit inference-provider choice for LM Studio, llama.cpp, and
+  OpenAI-compatible servers. Compatible connections discover server-provided
+  models and use streaming chat completions without the LM Studio CLI.
+- A clearer connection workflow and provider-aware model and benchmark screens.
+
+### Changed
+
+- Server-managed connections leave models loaded and keep load-time controls on
+  the server. Local LM Studio retains its managed loading and verification.
+- Endpoint documentation now explains local versus remote requests, server-owned
+  settings, and the limits of client timing and local GPU telemetry. Installation
+  examples use the downloaded release version instead of an outdated filename.
+
 ## 1.17.0 — 2026-09-18
 
 ### Added

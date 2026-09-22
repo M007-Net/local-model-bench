@@ -1,3 +1,4 @@
+import {isManagedEndpoint,canManageLocally,providerLabel} from '../src/endpoint';
 import {randomUUID,createHash} from 'node:crypto';
 import {Worker} from 'node:worker_threads';
 import {existsSync} from 'node:fs';
@@ -120,7 +121,10 @@ export async function runAgenticSweep(run:AgenticRun,settings:Settings,signal:Ab
    if(!model)throw Error('Downloaded model not found: '+config.modelKey);
    const parallel=Math.max(...config.workers);
    let instanceConfig:Record<string,unknown>|null=null;
-   if(config.instance==='loaded'){
+   if(!isManagedEndpoint(settings)){
+    instance=model.key;instanceConfig=null;
+    log('Using '+providerLabel(settings.provider)+' served model '+model.key+'. Server settings and model lifetime are controlled by the endpoint.');
+   }else if(config.instance==='loaded'){
     // Attaching to something already running. Nothing about it is changed — not its context, not
     // its parallel slots, not its cache — so the sweep reports what it found and leaves it loaded.
     const found=models.flatMap(m=>m.loaded_instances.map(i=>({m,i}))).find(({i})=>i.id===config.instanceId);
@@ -135,6 +139,7 @@ export async function runAgenticSweep(run:AgenticRun,settings:Settings,signal:Ab
     // the plateau in it would be LM Studio's queue rather than this machine's, so it is said plainly.
     if(slots!==null&&slots<parallel)log(`Warning: this sweep goes up to ${parallel} workers but that instance serves ${slots} at a time, so model calls above ${slots} queue inside LM Studio. The flattening above ${slots} workers describes the server, not this machine.`);
    }else{
+    if(!canManageLocally(settings))throw Error('Use OpenAI-compatible mode for a remote LM Studio server.');
     const total=serverContext(config.contextLength,parallel);
     if(model.max_context_length>0&&total>model.max_context_length)throw Error(`${model.display_name} supports ${model.max_context_length} context tokens; ${parallel} parallel slots at ${config.contextLength} tokens each need ${total}. Lower the context length or the highest worker count.`);
     const flash=flashOn(config.flashAttention);
@@ -220,7 +225,7 @@ export async function runAgenticSweep(run:AgenticRun,settings:Settings,signal:Ab
    const spread=ordered.length>1?` (${ordered.length} repeats spanning ${(ordered[0].wallMs/1000).toFixed(2)}–${(ordered[ordered.length-1].wallMs/1000).toFixed(2)} s)`:'';
    log(`${workers} worker(s): ${median.turns.length-failed} of ${config.turns} turns completed, median ${(median.wallMs/1000).toFixed(2)} s${spread}.`);
   }
-  emit({type:'environment',environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,availableParallelism:os.availableParallelism?.()??os.cpus().length,hostThreads:host.threads,totalMemory:os.totalmem(),node:process.versions.node,workloadVersion:WORKLOAD_VERSION,modelCall:modelCallLabel(config),kvCache:config.modelCall==='on'?(config.instance==='loaded'?'set by the instance already loaded':cacheText(config)):'not applicable',modelInstance:config.modelCall==='on'?(config.instance==='loaded'?'already loaded in LM Studio; left loaded':'loaded for this sweep and unloaded afterwards'):'none',hostWorkNote:'Host stage workloads are seeded from the turn index and never include model output. No generated code is executed.'}});
+  emit({type:'environment',environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,availableParallelism:os.availableParallelism?.()??os.cpus().length,hostThreads:host.threads,totalMemory:os.totalmem(),node:process.versions.node,workloadVersion:WORKLOAD_VERSION,modelCall:modelCallLabel(config),kvCache:config.modelCall==='on'?(!isManagedEndpoint(settings)?'configured on the endpoint server':config.instance==='loaded'?'set by the instance already loaded':cacheText(config)):'not applicable',endpoint:settings.baseUrl,provider:settings.provider??'lmstudio',serverSettings:isManagedEndpoint(settings)?'LM Studio instance':'Owned by external server; not modified',modelInstance:config.modelCall==='on'?(!isManagedEndpoint(settings)?'served by external endpoint; unchanged':config.instance==='loaded'?'already loaded in LM Studio; left loaded':'loaded for this sweep and unloaded afterwards'):'none',hostWorkNote:'Host stage workloads are seeded from the turn index and never include model output. No generated code is executed.'}});
   emit({type:'finish',status:signal.aborted?'cancelled':failures?'failed':'completed',...(failures?{error:`${failures} agent turn(s) failed. See the run log.`}:{})});
  }catch(e){emit({type:'finish',status:signal.aborted?'cancelled':'failed',error:(e as Error).message});}
  finally{await cleanup();host.stop();try{emit({type:'gpu',gpu:gpu.summary(runStart,Date.now())});}catch{}gpu.stop();}

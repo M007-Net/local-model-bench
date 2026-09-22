@@ -1,3 +1,5 @@
+import {assertRetryEndpoint} from './run-endpoint';
+import {isManagedEndpoint,canManageLocally,validateUrl} from '../src/endpoint';
 import { app, BrowserWindow, ipcMain, dialog, clipboard, safeStorage, shell } from 'electron';
 import { Worker } from 'node:worker_threads';
 import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
@@ -109,7 +111,7 @@ async function saveExport(title:string,name:string,format:string,render:(format:
 }
 async function newAgenticRun(config:AgenticConfig){
  assertIdle();
- const clean=validateAgenticConfig({...defaultAgenticConfig,...config,name:(config.name??'').trim()});
+ const clean=validateAgenticConfig({...defaultAgenticConfig,...config,...(!isManagedEndpoint(settings())?{instance:'loaded' as const,instanceId:config.modelKey,reasoning:'default',cacheK:'off' as const,cacheV:'off' as const}:{}),name:(config.name??'').trim()});
  if(clean.modelCall==='on'){const models=await listModels(settings());const model=models.find(m=>m.key===clean.modelKey);if(!model)throw Error('Selected model no longer available: '+clean.modelKey);clean.modelName=model.display_name;}
  else clean.modelName='';
  const now=new Date().toISOString();
@@ -140,20 +142,23 @@ function launch(run:Run,retries?:Sample[],gradeOnly=false){assertIdle();activeRu
   if(event.type==='grade'){const {sample}=getPair(run.id,event.sampleId);sample.grades.push(event.grade);store.saveSample(sample);}
   if(event.type==='model'){run.modelInfo[event.key]=event.info;store.saveRun(run);}
   if(event.type==='log'){run.logs.push(new Date().toLocaleTimeString()+' '+event.message);store.saveRun(run);}
-  if(event.type==='gpu'){run.gpu=event.gpu;store.saveRun(run);}
+  if(event.type==='gpu'&&!gradeOnly){run.gpu=event.gpu;store.saveRun(run);}
   if(event.type==='progress'){progress=event.progress;if(event.progress.phase==='grading'&&run.status!=='grading'){run.status='grading';store.saveRun(run);}notify();}
-  if(event.type==='finish'){run.status=gradeOnly?previousStatus:event.status;run.error=event.error;run.updated=new Date().toISOString();store.saveRun(run);}
+  if(event.type==='finish'){run.status=gradeOnly?previousStatus:event.status;if(!gradeOnly)run.error=event.error;run.updated=new Date().toISOString();store.saveRun(run);}
  }catch(e){run.status='failed';run.error='Could not persist benchmark event: '+(e as Error).message;worker?.postMessage('cancel');store.saveRun(run);}});
  worker.on('error',e=>{run.status='failed';run.error=e.message;store.saveRun(run);});
  worker.on('exit',()=>{if(run.status==='running'||run.status==='grading'){run.status='interrupted';store.saveRun(run);}worker=null;activeRun=null;progress=null;notify();});return run.id;
 }
 async function newRun(config:RunConfig,retries?:Sample[],source?:Run){
- assertIdle();validateConfig(config,allPacks());const models=await listModels(settings());for(const key of config.modelKeys)if(!models.some(m=>m.key===key))throw Error('Selected model no longer available: '+key);
- for(const model of models.filter(m=>config.modelKeys.includes(m.key))){assertMtpPlan(model,config);visionArgs(model,config.vision);}
+ assertIdle();
+ if(!isManagedEndpoint(settings()))config={...config,mtp:undefined,mtpSweep:undefined,mtpPreflight:undefined,mtpDraftTokens:undefined,runtime:undefined,cacheK:undefined,cacheV:undefined,flashAttention:undefined,gpu:'auto',reasoning:'default',vision:undefined};
+ else if(!canManageLocally(settings()))throw Error('Choose OpenAI-compatible for remote LM Studio benchmarks. Local model management cannot control that server.');
+ validateConfig(config,allPacks());const models=await listModels(settings());for(const key of config.modelKeys)if(!models.some(m=>m.key===key))throw Error('Selected model no longer available: '+key);
+ for(const model of models.filter(m=>isManagedEndpoint(settings())&&config.modelKeys.includes(m.key))){assertMtpPlan(model,config);visionArgs(model,config.vision);}
  const tests=source?.tests??[...(config.mode!=='quality'?config.performanceLengths.map(performanceTest):[]),...(config.mode!=='performance'?(config.benchmark?selectBenchmark(config.benchmark,allPacks()):store.tests().filter(t=>config.testIds.includes(t.id))):[]),...(config.vision==='on'?visionTests():[])];
  if(!tests.length)throw Error('Select at least one available test.');if(config.mode!=='performance'&&!source&&!config.benchmark&&config.testIds.some(id=>!tests.some(t=>t.id===id)))throw Error('A selected test was deleted. Refresh your selection.');
- const now=new Date().toISOString();let runtime='Unavailable';try{runtime=await cli(settings(),['runtime','ls']);}catch{}
- const run:Run={id:randomUUID(),created:now,updated:now,status:'running',config:{...config,name:config.name.trim()||new Date().toLocaleString()},tests,modelInfo:Object.fromEntries(models.filter(m=>config.modelKeys.includes(m.key)).map(model=>[model.key,{model}])),environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,totalMemory:os.totalmem(),node:process.versions.node,electron:process.versions.electron,appVersion:app.getVersion(),runtime,endpoint:settings().baseUrl,judgePrompt:settings().judgePrompt,cachePolicy:'Fresh state, deterministic leading variants; prefix caching cannot be fully disabled through this API.',vision:{requested:config.vision??'auto',projectorToggle,note:noProjectorToggleNote}},logs:[],samples:[],waves:[]};
+ const now=new Date().toISOString();let runtime='Configured on endpoint server';try{if(canManageLocally(settings()))runtime=await cli(settings(),['runtime','ls']);}catch{}
+ const run:Run={id:randomUUID(),created:now,updated:now,status:'running',config:{...config,name:config.name.trim()||new Date().toLocaleString()},tests,modelInfo:Object.fromEntries(models.filter(m=>config.modelKeys.includes(m.key)).map(model=>[model.key,{model}])),environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,totalMemory:os.totalmem(),node:process.versions.node,electron:process.versions.electron,appVersion:app.getVersion(),provider:settings().provider??'lmstudio',serverSettings:isManagedEndpoint(settings())?'Managed LM Studio instance':'Server owns context, cache, GPU and model lifetime',runtime,endpoint:settings().baseUrl,judgePrompt:settings().judgePrompt,cachePolicy:'Fresh state, deterministic leading variants; prefix caching cannot be fully disabled through this API.',vision:{requested:config.vision??'auto',projectorToggle,note:noProjectorToggleNote}},logs:[],samples:[],waves:[]};
  if(retries)run.logs.push(`Retry of ${source?.id}. Only failed/cancelled requests are retried with exact original prompts. Partial waves use the actual retried request count; compare separately.`);
  return launch(run,retries);
 }
@@ -201,13 +206,13 @@ if(locked)app.whenReady().then(()=>{
  // The installed llama.cpp builds, so a run can name the one it wants. On an AMD card the ROCm
  // and Vulkan builds can differ by a large factor on prompt processing, and which one produced a
  // finished run's numbers is not recoverable afterwards unless the run recorded it.
- handle('runtimes',()=>listRuntimes(settings(),cli));
+ handle('runtimes',()=>canManageLocally(settings())?listRuntimes(settings(),cli):[]);
  handle('startServer',async()=>{assertIdle();const s=settings();const u=new URL(s.baseUrl);resolveLms(s);return cli(s,['server','start','--port',u.port||'1234']);});
  handle('saveSettings',(s:SettingsUpdate)=>{assertIdle();validateSettings(s);const current=storedSettings();
   // An omitted token means "leave the stored one alone". The window never
   // received it and so cannot send it back; only an explicit empty string
   // clears it.
-  let encryptedToken=current.encryptedToken;
+  let encryptedToken=validateUrl(current.baseUrl)===validateUrl(s.baseUrl)&&(current.provider??'lmstudio')===(s.provider??'lmstudio')?current.encryptedToken:undefined;
   if(s.token!==undefined){
    if(s.token&&!safeStorage.isEncryptionAvailable())throw Error('Windows credential encryption is unavailable. Token was not saved.');
    encryptedToken=s.token?safeStorage.encryptString(s.token).toString('base64'):undefined;
@@ -216,7 +221,7 @@ if(locked)app.whenReady().then(()=>{
   // persist any extra key the window sent and reload it into the Settings object that
   // later reaches the CLI and the HTTP client, and every field added here in future
   // would inherit that hole automatically.
-  store.set('settings',{baseUrl:s.baseUrl,lmsPath:s.lmsPath,timeoutSec:s.timeoutSec,loadTimeoutSec:s.loadTimeoutSec,judgePrompt:s.judgePrompt,updateRepo:s.updateRepo,updateCheck:s.updateCheck,encryptedToken});});
+  store.set('settings',{provider:s.provider??'lmstudio',baseUrl:validateUrl(s.baseUrl),lmsPath:s.lmsPath,timeoutSec:s.timeoutSec,loadTimeoutSec:s.loadTimeoutSec,judgePrompt:s.judgePrompt,updateRepo:s.updateRepo,updateCheck:s.updateCheck,encryptedToken});});
  handle('saveTest',(t:TestCase)=>{validateTest(t);const old=store.tests().find(x=>x.id===t.id);const saved={...t,id:t.id||randomUUID(),kind:'quality' as const,version:old?old.version+1:1};store.saveTest(saved);return saved;});
  handle('deleteTest',(id:string)=>store.deleteTest(id));
  handle('choosePackFile',async()=>{
@@ -247,7 +252,7 @@ if(locked)app.whenReady().then(()=>{
  handle('startRun',(c:RunConfig)=>newRun(c));
  handle('cancel',()=>{worker?.postMessage('cancel');if(progress){progress={...progress,message:'Cancelling requests and unloading the benchmark model…'};notify();}});
  handle('getRun',(id:string)=>store.getRun(id));
- handle('retry',(id:string)=>{const old=store.getRun(id);const retries=old.samples.filter(s=>!s.warmup&&s.status!=='completed');if(!retries.length){if(old.status==='failed'||old.status==='interrupted')return newRun({...old.config,name:old.config.name+' (retry)',retryOf:id},undefined,old);throw Error('No failed requests to retry.');}return newRun({...old.config,name:old.config.name+' (retry)',modelKeys:[...new Set(retries.map(s=>s.modelKey))],retryOf:id},retries,old);});
+ handle('retry',(id:string)=>{const old=store.getRun(id);assertRetryEndpoint(old,settings());const retries=old.samples.filter(s=>!s.warmup&&s.status!=='completed');if(!retries.length){if(old.status==='failed'||old.status==='interrupted')return newRun({...old.config,name:old.config.name+' (retry)',retryOf:id},undefined,old);throw Error('No failed requests to retry.');}return newRun({...old.config,name:old.config.name+' (retry)',modelKeys:[...new Set(retries.map(s=>s.modelKey))],retryOf:id},retries,old);});
  handle('grade',(id:string,judge:string)=>{assertIdle();if(!judge)throw Error('Choose a local judge model.');const run=store.getRun(id);run.config.judgeModel=judge;return launch(run,undefined,true);});
  handle('copyPackage',async(rid:string,sid:string)=>{const {sample,test,run}=getPair(rid,sid);const text=gradingPackage(sample,test,String(run.environment.judgePrompt||settings().judgePrompt));let copied=false;try{await clipboard.writeText(text);copied=(await clipboard.readText())===text;}catch{}return {copied,text};});
  handle('importGrade',(rid:string,sid:string,raw:string,judge:string)=>{if(raw.length>1000000)throw Error('Grade too large');const {run,sample,test}=getPair(rid,sid);sample.grades.push(parseGrade(raw,'external',judge,test.version));store.saveSample(sample);
@@ -307,13 +312,13 @@ if(locked)app.whenReady().then(()=>{
  // A vision projector cannot be detached at load time (see text-only.ts), so the only honest
  // answer is a second, projector-free entry for LM Studio to index. Both actions are refused
  // while a run is in flight, because either changes what LM Studio lists.
- handle('textOnlyPlan',async(key:string)=>{const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);return planTextOnly(model);});
- handle('makeTextOnly',async(key:string)=>{assertIdle();const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);
+ handle('textOnlyPlan',async(key:string)=>{if(!canManageLocally(settings()))throw Error('Text-only copies require local LM Studio.');const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);return planTextOnly(model);});
+ handle('makeTextOnly',async(key:string)=>{assertIdle();if(!canManageLocally(settings()))throw Error('Text-only copies require local LM Studio.');const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);
   const folder=createTextOnly(planTextOnly(model));
   if(!await awaitIndexed(folder))throw Error(`The copy was made at ${folder}, but LM Studio has not listed it yet. Refresh the model library in a moment; if it never appears, check that folder is inside LM Studio's models directory.`);
   return folder;});
- handle('textOnlyTwins',()=>textOnlyTwins());
- handle('removeTextOnly',async(folder:string)=>{assertIdle();removeTextOnly(folder);await awaitIndexed(folder,undefined,20000,150,false);});
+ handle('textOnlyTwins',()=>canManageLocally(settings())?textOnlyTwins():[]);
+ handle('removeTextOnly',async(folder:string)=>{assertIdle();if(!canManageLocally(settings()))throw Error('Text-only copies require local LM Studio.');removeTextOnly(folder);await awaitIndexed(folder,undefined,20000,150,false);});
  handle('openData',()=>shell.openPath(dataPath));
  win=new BrowserWindow({width:1440,height:960,minWidth:1050,minHeight:720,title:'Local Model Bench',icon:path.join(__dirname,'../assets/icon.png'),backgroundColor:'#101416',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
  win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',e=>e.preventDefault());

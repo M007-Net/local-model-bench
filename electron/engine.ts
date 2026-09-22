@@ -1,3 +1,4 @@
+import {isManagedEndpoint,canManageLocally,providerLabel} from '../src/endpoint';
 import { randomUUID, createHash } from 'node:crypto';
 import type { Run, RunGpu, Sample, Settings, Model, Progress, TestCase, Grade } from '../src/types';
 import { api, cli, infer, listModels } from './lmstudio';
@@ -40,6 +41,13 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
  const cleanup=async()=>{if(owned){const id=owned;owned=null;try{await adapter.api(settings,'/api/v1/models/unload',{instance_id:id});log(`Unloaded ${id}`);}catch(e){log(`Cleanup could not unload ${id}: ${(e as Error).message}`);}}};
  const load=async(key:string,parallel:number,models:Model[],role='benchmark',step:MtpStep=steps[0])=>{
   if(signal.aborted)throw Error('Cancelled');const model=models.find(m=>m.key===key);if(!model)throw Error(`Downloaded model not found: ${key}`);
+  if(!isManagedEndpoint(settings)){
+   if(role!=='judge'&&(run.config.mtp==='on'||run.config.mtpSweep?.length||run.config.runtime))throw Error('MTP sweeps and runtime selection are controlled by the external server.');
+   log('Using '+providerLabel(settings.provider)+' served model '+key+'. Context, parallel slots, GPU offload, cache and speculative decoding are controlled by the server.');
+   if(role!=='preflight')emit({type:'model',key:role==='judge'?'judge:'+key:key,info:{model,instance:{id:key,config:null},management:'external server',reasoning:'server default'}});
+   return {model,id:key};
+  }
+  if(!canManageLocally(settings))throw Error('Remote LM Studio must use the OpenAI-compatible provider to benchmark served models without changing local files.');
   // Parallel slots share one KV cache, so the instance needs room for every slot at once.
   const context=run.config.contextLength,total=serverContext(context,parallel);
   if(model.max_context_length>0&&total>model.max_context_length)throw Error(`${model.display_name} supports ${model.max_context_length} context tokens; ${parallel} parallel slots at ${context} tokens each need ${total}. Lower the context length or the highest concurrency.`);
@@ -117,6 +125,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
  // request cannot give one. This runs once per loaded instance, costs two requests, and is
  // recorded beside the model rather than mixed in with the measured samples.
  const calibrate=async(model:Model,instance:string,key:string,step:MtpStep)=>{
+  if(!isManagedEndpoint(settings))return;
   try{
    progress('warmup',`Calibrating prompt processing for ${model.display_name} (excluded from results)…`);
    const point=async(repeats:number)=>{
@@ -170,7 +179,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
  // it, which is what every run made before this field existed did.
  let restoreRuntime:(()=>Promise<void>)|null=null;
  try{
-  if(run.config.runtime&&!gradeOnly){
+  if(isManagedEndpoint(settings)&&run.config.runtime&&!gradeOnly){
    restoreRuntime=await selectRuntime(settings,adapter.cli,run.config.runtime,signal);
    log(`Runtime: ${runtimeLabel(run.config.runtime.split('@')[0])} · ${run.config.runtime}. LM Studio's engine selection is global, so it is switched for this run and restored afterwards.`);
   }
@@ -242,7 +251,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
     for(const sample of candidates){if(signal.aborted)break;const test=run.tests.find(t=>t.id===sample.testId)!;progress('grading',`Grading ${sample.testName} (${completed+1}/${total})`);
      const prompt=gradingPackage(sample,test,String(run.environment.judgePrompt||settings.judgePrompt));
      const result=await adapter.infer({...settings,timeoutSec:run.config.timeoutSec},loaded.id,prompt,Math.min(2048,Math.floor(run.config.contextLength/2)),0,judgeReasoning,signal);
-     try{if(result.status!=='completed')throw Error(result.error||result.status);const grade=parseGrade(result.output,'local',judgeKey,test.version);emit({type:'grade',sampleId:sample.id,grade});}catch(e){log(`Ungraded ${sample.id}: ${(e as Error).message}. Raw judge output: ${result.output}`);}completed++;
+     try{if(result.status!=='completed')throw Error(result.error||result.status);const grade={...parseGrade(result.output,'local',judgeKey,test.version),endpoint:settings.baseUrl,provider:settings.provider??'lmstudio' as const};emit({type:'grade',sampleId:sample.id,grade});}catch(e){log(`Ungraded ${sample.id}: ${(e as Error).message}. Raw judge output: ${result.output}`);}completed++;
     }
    }catch(e){log(`Judge unavailable: ${(e as Error).message}`);}finally{await cleanup();}
   }

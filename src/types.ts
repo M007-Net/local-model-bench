@@ -6,7 +6,7 @@ export type Rule = { id: string; label: string; type: 'exact'|'contains'|'headin
 // the prompt never mentioned.
 export type TestCase = { allowCodeFence?:boolean; benchmark?:import('./benchmarks').BenchmarkMeta; id:string; name:string; category:string; version:number; prompt:string; answerKey:string; rubric:string; maxTokens:number; rules:Rule[]; kind:'quality'|'performance'; image?:string; imageDigest?:string };
 export type Model = {nativeMtp?:{supported:boolean|null;reason:string;resource?:string;kind?:'bundled'|'sidecar';draftResource?:string;draftPath?:string};key:string; display_name:string; size_bytes:number; quantization:{name:string}|null; max_context_length:number; type:string; loaded_instances:{id:string; config:{context_length:number;parallel?:number;[key:string]:unknown}}[]; capabilities?:{vision?:boolean;reasoning?:{allowed_options:string[];default:string}}; [key:string]:unknown};
-export type Settings = {baseUrl:string; token:string; lmsPath:string; timeoutSec:number; loadTimeoutSec:number; judgePrompt:string; updateRepo:string; updateCheck:boolean};
+export type Settings = {provider?:import('./endpoint').EndpointProvider;baseUrl:string; token:string; lmsPath:string; timeoutSec:number; loadTimeoutSec:number; judgePrompt:string; updateRepo:string; updateCheck:boolean};
 // What the window is allowed to see. The token itself never crosses the IPC
 // boundary, so the renderer learns only whether one is stored.
 export type PublicSettings = Omit<Settings,'token'> & {tokenConfigured:boolean};
@@ -24,7 +24,7 @@ export type RunConfig = {benchmark?:import('./benchmarks').BenchmarkSelection;vi
 // response failed. It is left off both sides of the score rather than counted as a miss.
 export type Check = {id:string;label:string;passed:boolean;weight:number;detail:string;unscorable?:boolean};
 export type Objective = {score:number|null;checks:Check[]};
-export type Grade = {source:'local'|'external';score:number;criteria:{name:string;score:number;reason:string}[];summary:string;judge:string;rubricVersion:number;created:string;raw:string};
+export type Grade = {endpoint?:string;provider?:import('./endpoint').EndpointProvider;source:'local'|'external';score:number;criteria:{name:string;score:number;reason:string}[];summary:string;judge:string;rubricVersion:number;created:string;raw:string};
 export type GpuStat = {min:number;avg:number;max:number};
 export type GpuTick = {t:number;tempCore:number|null;tempHotSpot:number|null;tempMemory:number|null;power:number|null;load:number|null;clockCore:number|null;fanRpm:number|null;memoryUsed:number|null};
 export type GpuStats = {samples:number;exact:boolean;tempCore:GpuStat|null;tempHotSpot:GpuStat|null;tempMemory:GpuStat|null;power:GpuStat|null;load:GpuStat|null;clockCore:GpuStat|null;fanRpm:GpuStat|null;memoryUsedMax:number|null};
