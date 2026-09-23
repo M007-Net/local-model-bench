@@ -1,6 +1,6 @@
 {
   "name": "local-model-bench",
-  "version": "1.18.2",
+  "version": "1.19.0",
   "description": "Desktop benchmarks and transparent grading for LM Studio, llama.cpp, and compatible endpoints",
   "author": "Local Model Bench contributors",
   "license": "MIT",
@@ -44,7 +44,8 @@
     "agents:calibrate": "tsx scripts/agent-calibrate.ts",
     "qa:endpoints": "node scripts/qa-endpoints.mjs",
     "qa:endpoint-matrix": "node scripts/qa-endpoint-matrix.mjs",
-    "qa:live-endpoints": "node scripts/qa-live-endpoints.mjs"
+    "qa:live-endpoints": "node scripts/qa-live-endpoints.mjs",
+    "qa:load-profiles": "node scripts/qa-load-profiles.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

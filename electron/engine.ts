@@ -34,8 +34,9 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
  // mtpDepthText, never "MTP " + label: the label for depth 0 is already "MTP off", so the
  // shorter form read "MTP MTP off" on every baseline load and wave of a sweep.
  const stepNote=()=>steps.length>1?` · ${mtpDepthText(currentStep.depth)}`:'';
+ const sustained=run.config.loadProfile==='sustained'&&!retries;
  const perStep=run.tests.length*run.config.waves*run.config.concurrency.reduce((a,b)=>a+b,0);
- let total=gradeOnly?0:retries?retries.length:steps.length*run.config.modelKeys.length*perStep;
+ let total=gradeOnly?0:retries?retries.length:sustained?0:steps.length*run.config.modelKeys.length*perStep;
  const progress=(phase:string,message:string)=>emit({type:'progress',progress:{runId:run.id,phase,message,completed,total,active,model:currentModel}});
  const log=(message:string)=>emit({type:'log',message});
  const cleanup=async()=>{if(owned){const id=owned;owned=null;try{await adapter.api(settings,'/api/v1/models/unload',{instance_id:id});log(`Unloaded ${id}`);}catch(e){log(`Cleanup could not unload ${id}: ${(e as Error).message}`);}}};
@@ -148,17 +149,19 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
    log(`Prompt-processing calibration skipped for ${model.display_name}: ${(e as Error).message}`);
   }
  };
- const request=async(model:Model,instance:string,test:TestCase,c:number,wave:number,slot:number,waveId:string,warmup=false,previous?:Sample)=>{
-  const prompt=previous?.prompt??(test.benchmark?test.prompt:variant(test.prompt,test.id,c,wave,slot));active++;progress(warmup?'warmup':'benchmarking',warmup?'Warming up (excluded from results)…':`${test.name} · ${c} concurrent · wave ${wave+1}${stepNote()}`);
+ const request=async(model:Model,instance:string,test:TestCase,c:number,wave:number,slot:number,waveId:string,warmup=false,previous?:Sample,tolerateThrown=false)=>{
+  const prompt=previous?.prompt??(test.benchmark?test.prompt:variant(test.prompt,test.id,c,wave,slot));active++;progress(warmup?'warmup':'benchmarking',warmup?'Warming up (excluded from results)…':`${test.name} · ${c} concurrent · ${sustained?'duration-based point':`wave ${wave+1}`}${stepNote()}`);
   const max=warmup?32:test.maxTokens>0?Math.min(test.maxTokens,run.config.maxTokens):run.config.maxTokens;
-  let result:Awaited<ReturnType<typeof infer>>;const startedAt=Date.now();
-  try{result=await adapter.infer({...settings,timeoutSec:run.config.timeoutSec},instance,prompt,max,run.config.temperature,run.config.reasoning,signal,test.image);}finally{active--;}
+  let result:Awaited<ReturnType<typeof infer>>;const startedAt=Date.now(),startedMono=performance.now();
+  try{result=await adapter.infer({...settings,timeoutSec:run.config.timeoutSec},instance,prompt,max,run.config.temperature,run.config.reasoning,signal,test.image);}
+  catch(e){if(!tolerateThrown)throw e;result={output:'',reasoning:'',rawStats:{},metrics:{inputTokens:null,outputTokens:null,reasoningTokens:null,generationTps:null,prefillTps:null,prefillMs:null,ttftMs:null,durationMs:performance.now()-startedMono,firstContentMs:null,prefillMethod:'Unavailable: request failed before statistics were received',cacheNote:'Input tokens include formatting; cache reuse and stream buffering are not observable. This is not engine-level uncached prefill speed.'},status:signal.aborted?'cancelled':'failed',error:(e as Error).message,possibleTruncation:false};}
+  finally{active--;}
   const finishedAt=Date.now();
   // The depth is recorded on the measurement itself, not read back from the run's settings:
   // a sweep gives one run several depths, and every response has to say which one produced it.
-  const sample:Sample={...result,...(currentStep.depth===null?{}:{mtpTokens:currentStep.depth}),id:randomUUID(),runId:run.id,modelKey:model.key,modelName:model.display_name,testId:test.id,testName:test.name,concurrency:c,waveId,wave,slot,warmup,prompt,objective:result.status==='completed'&&!warmup?objectiveScore(result.output,test):{score:null,checks:[]},grades:[],created:new Date().toISOString(),retryOf:previous?.id,gpu:gpu.window(startedAt,finishedAt)};
+  const sample:Sample={...result,...(currentStep.depth===null?{}:{mtpTokens:currentStep.depth}),...(test.contextTokens===undefined?{}:{contextTokens:test.contextTokens}),id:randomUUID(),runId:run.id,modelKey:model.key,modelName:model.display_name,testId:test.id,testName:test.name,concurrency:c,waveId,wave,slot,warmup,prompt,objective:result.status==='completed'&&!warmup?objectiveScore(result.output,test):{score:null,checks:[]},grades:[],created:new Date().toISOString(),retryOf:previous?.id,gpu:gpu.window(startedAt,finishedAt)};
   if(!warmup){completed++;measured.push(sample);if(sample.status!=='completed')failures++;}
-  emit({type:'sample',sample});progress('benchmarking',`${test.name} · ${completed} of ${total} finished`);return sample;
+  emit({type:'sample',sample});progress('benchmarking',sustained?`${test.name} · ${completed} completed · duration-based point`:`${test.name} · ${completed} of ${total} finished`);return sample;
  };
  const wave=async(model:Model,instance:string,test:TestCase,c:number,index:number,previous?:Sample[])=>{
   const id=randomUUID(),start=performance.now(),startedAt=Date.now();
@@ -171,7 +174,43 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
   const results=await Promise.all(Array.from({length:c},(_,slot)=>request(model,instance,test,c,index,slot,id,false,previous?.[slot])));
   const elapsed=performance.now()-start,window=gpu.window(startedAt,Date.now());
   const draft=acceptance?await (adapter.draftAcceptance??settledDraftAcceptance)(acceptance,results.filter(s=>s.status==='completed').length):null;
-  emit({type:'wave',wave:waveMetrics(id,run.id,model.key,test.id,c,elapsed,results,window,draft)});
+  emit({type:'wave',wave:{...waveMetrics(id,run.id,model.key,test.id,c,elapsed,results,window,draft),...(test.contextTokens===undefined?{}:{contextTokens:test.contextTokens})}});
+ };
+ const sustainedPoint=async(model:Model,instance:string,test:TestCase,c:number,index:number)=>{
+  const id=randomUUID(),start=performance.now(),startedAt=Date.now();
+  const durationSec=Math.max(1,Math.min(3600,run.config.durationSec??30));
+  // Completed samples retain their exact prompts in run history. Limit a single point's
+  // saved prompt text as well as request count so very long context sweeps stay usable.
+  const maxRequests=Math.min(10_000,Math.max(c,Math.floor(100_000_000/Math.max(1,test.prompt.length))));
+  const deadline=start+durationSec*1000;
+  const speculating=currentStep.mode==='on';
+  const acceptance=speculating?(adapter.watchLog??watchEngineLog)():null;
+  let launched=0;
+  let deadlineReported=false;
+  const reportDeadline=()=>{if(!deadlineReported){deadlineReported=true;progress('benchmarking',`${test.name} · ${completed} completed · duration elapsed · draining ${active} in-flight request(s)`);}};
+  progress('benchmarking',`${test.name} · ${c} concurrent · running duration-based point for ${durationSec}s`);
+  const worker=async(slot:number)=>{
+   while(!signal.aborted&&launched<maxRequests){
+    if(performance.now()>=deadline){reportDeadline();break;}
+    launched++;
+    const attemptStart=performance.now();
+    const sample=await request(model,instance,test,c,launched-1,slot,id,false,undefined,true);
+    // A broken or overloaded endpoint can fail immediately. Pace failures so the safety cap
+    // is a true ceiling rather than an invitation to spin through thousands of requests.
+    if(sample.status!=='completed'){
+     const remaining=50-(performance.now()-attemptStart);
+     if(remaining>0)await new Promise<void>(resolve=>setTimeout(resolve,remaining));
+    }
+   }
+  };
+  await Promise.all(Array.from({length:c},(_,slot)=>worker(slot)));
+  if(!deadlineReported&&performance.now()>=deadline)reportDeadline();
+  const elapsed=performance.now()-start,window=gpu.window(startedAt,Date.now());
+  const samples=measured.filter(sample=>sample.waveId===id);
+  progress('benchmarking',`${test.name} · ${samples.length} completed · duration point finished after drain`);
+  const draft=acceptance?await (adapter.draftAcceptance??settledDraftAcceptance)(acceptance,samples.filter(s=>s.status==='completed').length):null;
+  emit({type:'wave',wave:{...waveMetrics(id,run.id,model.key,test.id,c,elapsed,samples,window,draft),...(test.contextTokens===undefined?{}:{contextTokens:test.contextTokens})}});
+  if(launched>=maxRequests)log(`Sustained point reached the safety cap of ${maxRequests} requests (up to about 100 MB of saved prompt text); no additional requests were launched.`);
  };
  // Which llama.cpp build runs this. LM Studio has one selected engine at a time and no per-load
  // flag, so a run that names one selects it here and puts the previous choice back in the finally
@@ -209,7 +248,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
       // One model that cannot draft at all is one failure, not one per depth it would have run.
       blocked.set(key,(e as Error).message);failures++;
       unmeasured.push(`${key} · MTP ${depths.map(s=>s.label).join(', ')} (the MTP head would not load)`);
-      total-=depths.length*perStep;
+      if(!sustained)total-=depths.length*perStep;
       log(`MTP preflight: ${key} cannot load its MTP head, so its MTP depths were skipped before anything was measured: ${(e as Error).message}`);
      }finally{await cleanup();}
     }
@@ -234,7 +273,11 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
        const groups=new Map<string,Sample[]>();for(const s of mine){const list=groups.get(s.waveId)??[];list.push(s);groups.set(s.waveId,list);}
        for(const group of groups.values()){if(signal.aborted)break;const test=run.tests.find(t=>t.id===group[0].testId)!;await wave(model,id,test,group.length,group[0].wave,group);}
       }else{
-       for(const test of run.tests){for(const c of run.config.concurrency){for(let i=0;i<run.config.waves;i++){if(signal.aborted)break;await wave(model,id,test,c,i);}if(signal.aborted)break;}if(signal.aborted)break;}
+       for(const test of run.tests){for(const c of run.config.concurrency){
+        if(run.config.loadProfile==='sustained')await sustainedPoint(model,id,test,c,0);
+        else for(let i=0;i<run.config.waves;i++){if(signal.aborted)break;await wave(model,id,test,c,i);}
+        if(signal.aborted)break;
+       }if(signal.aborted)break;}
       }
      }catch(e){if(!signal.aborted){failures++;unmeasured.push(`${key}${stepNote()}`);log(`Model failed: ${key}${stepNote()}: ${(e as Error).message}`);}}finally{await cleanup();}
     }

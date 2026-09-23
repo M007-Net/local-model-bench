@@ -15,6 +15,7 @@ import { awaitIndexed, createTextOnly, planTextOnly, removeTextOnly, textOnlyTwi
 import type { Run, RunConfig, Settings, PublicSettings, SettingsUpdate, TestCase, Sample, Progress } from '../src/types';
 import { cli, listModels, resolveLms } from './lmstudio';
 import { listRuntimes } from './runtime';
+import {contextWorkloads} from '../src/load-profile';
 import { validateConfig, validateSettings, validateTest } from './validation';
 import { gradingPackage, parseGrade } from './scoring';
 import { exportText } from './export';
@@ -154,8 +155,15 @@ async function newRun(config:RunConfig,retries?:Sample[],source?:Run){
  if(!isManagedEndpoint(settings()))config={...config,mtp:undefined,mtpSweep:undefined,mtpPreflight:undefined,mtpDraftTokens:undefined,runtime:undefined,cacheK:undefined,cacheV:undefined,flashAttention:undefined,gpu:'auto',reasoning:'default',vision:undefined};
  else if(!canManageLocally(settings()))throw Error('Choose OpenAI-compatible for remote LM Studio benchmarks. Local model management cannot control that server.');
  validateConfig(config,allPacks());const models=await listModels(settings());for(const key of config.modelKeys)if(!models.some(m=>m.key===key))throw Error('Selected model no longer available: '+key);
+ if(config.contextSweep?.length){
+  const needed=Math.max(...config.contextSweep)+config.maxTokens+128;
+  for(const model of models.filter(m=>config.modelKeys.includes(m.key))){
+   const capacity=isManagedEndpoint(settings())?config.contextLength:Number(model.loaded_instances[0]?.config?.context_length)||0;
+   if(capacity>0&&needed>capacity)throw Error(`${model.display_name}: the largest approximate input target plus output and overhead needs about ${needed} context tokens, but this ${isManagedEndpoint(settings())?'run requests':'server reports'} ${capacity}. Raise the context limit or lower the sweep target and output limit.`);
+  }
+ }
  for(const model of models.filter(m=>isManagedEndpoint(settings())&&config.modelKeys.includes(m.key))){assertMtpPlan(model,config);visionArgs(model,config.vision);}
- const tests=source?.tests??[...(config.mode!=='quality'?config.performanceLengths.map(performanceTest):[]),...(config.mode!=='performance'?(config.benchmark?selectBenchmark(config.benchmark,allPacks()):store.tests().filter(t=>config.testIds.includes(t.id))):[]),...(config.vision==='on'?visionTests():[])];
+ const tests=source?.tests??contextWorkloads([...(config.mode!=='quality'?config.performanceLengths.map(performanceTest):[]),...(config.mode!=='performance'?(config.benchmark?selectBenchmark(config.benchmark,allPacks()):store.tests().filter(t=>config.testIds.includes(t.id))):[]),...(config.vision==='on'?visionTests():[])],config);
  if(!tests.length)throw Error('Select at least one available test.');if(config.mode!=='performance'&&!source&&!config.benchmark&&config.testIds.some(id=>!tests.some(t=>t.id===id)))throw Error('A selected test was deleted. Refresh your selection.');
  const now=new Date().toISOString();let runtime='Configured on endpoint server';try{if(canManageLocally(settings()))runtime=await cli(settings(),['runtime','ls']);}catch{}
  const run:Run={id:randomUUID(),created:now,updated:now,status:'running',config:{...config,name:config.name.trim()||new Date().toLocaleString()},tests,modelInfo:Object.fromEntries(models.filter(m=>config.modelKeys.includes(m.key)).map(model=>[model.key,{model}])),environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,totalMemory:os.totalmem(),node:process.versions.node,electron:process.versions.electron,appVersion:app.getVersion(),provider:settings().provider??'lmstudio',serverSettings:isManagedEndpoint(settings())?'Managed LM Studio instance':'Server owns context, cache, GPU and model lifetime',runtime,endpoint:settings().baseUrl,judgePrompt:settings().judgePrompt,cachePolicy:'Fresh state, deterministic leading variants; prefix caching cannot be fully disabled through this API.',vision:{requested:config.vision??'auto',projectorToggle,note:noProjectorToggleNote}},logs:[],samples:[],waves:[]};

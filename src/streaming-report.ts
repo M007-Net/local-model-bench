@@ -1,0 +1,8 @@
+import type {Run} from './types';
+import {summaries} from '../electron/export';
+import {escapeHtml} from './charts';
+export function streamingReport(run:Run){
+ const rows=summaries(run);if(!rows.some(r=>r.streamingRequests||r.contextTarget!==null||r.loadProfile==='sustained'))return '';
+ const cell=(x:unknown)=>`<td>${x==null?'Unavailable':escapeHtml(typeof x==='number'?Number(x.toFixed(2)):x)}</td>`;
+ return `<h2>Streaming and load behavior</h2><p>Load profile: ${escapeHtml(run.config.loadProfile??'waves')}. ${run.config.loadProfile==='sustained'?`${run.config.durationSec??30} seconds of new requests per combination; throughput includes in-flight drain. Fixed concurrency, not fixed arrival rate.`:''} First output and gaps are client-observed, including buffering. Stream chunks can contain multiple tokens; gaps are not exact inter-token latency. Percentiles exclude failures and warm-ups and are unstable for small samples. Approximate context targets do not change server context capacity.</p><div style="overflow-x:auto"><table><tr>${['Model / prompt','Concurrency','Target input tokens','Actual input tokens (mean)','Timed responses','First output p50 ms','First output p95 ms','First output p99 ms','Response p99 ms','Mean stream gap ms','Worst stream gap ms','Estimated ms/token'].map(x=>`<th>${x}</th>`).join('')}</tr>${rows.map(r=>`<tr>${[`${r.model} / ${r.test}${r.mtpDepth===null?'':` / MTP ${r.mtpDepth}`}`,r.concurrency,r.contextTarget,r.inputTokensMean,r.streamingRequests,r.firstEventP50Ms,r.firstEventP95Ms,r.firstEventP99Ms,r.requestP99Ms,r.meanStreamGapMs,r.worstStreamGapMs,r.estimatedTpotMs].map(cell).join('')}</tr>`).join('')}</table></div>`;
+}

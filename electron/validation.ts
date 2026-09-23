@@ -19,6 +19,16 @@ export function validateSettings(s:SettingsUpdate){if(s.provider!==undefined&&![
  // the rest of the string be read as a second header.
  if(s.token!==undefined){if(typeof s.token!=='string'||s.token.length>4096||/[\u0000-\u001f\u007f]/.test(s.token))throw Error('Invalid API token.');}}
 export function validateConfig(c:RunConfig,packs:BenchmarkPack[]=builtInPacks){
+ if(c.loadProfile!==undefined&&!['waves','sustained'].includes(c.loadProfile))throw Error('Choose waves or sustained load.');
+ if(c.durationSec!==undefined)integer(c.durationSec,1,3600,'Sustained duration');
+ if(c.loadProfile==='sustained'&&c.durationSec===undefined)c.durationSec=30;
+ if(c.contextSweep!==undefined){
+  if(!Array.isArray(c.contextSweep)||c.contextSweep.length>8)throw Error('Use up to eight context targets.');
+  c.contextSweep.forEach(n=>integer(n,128,131072,'Approximate input tokens'));
+  c.contextSweep=[...new Set(c.contextSweep)].sort((a,b)=>a-b);
+ }
+ if((c.loadProfile==='sustained'||c.contextSweep?.length)&&c.mode!=='performance')throw Error('Choose speed-only mode for sustained load or a context sweep.');
+ if((c.loadProfile==='sustained'||c.contextSweep?.length)&&c.vision==='on')throw Error('Context and sustained performance sweeps use text prompts. Turn vision off.');
  if(c.benchmark){validateBenchmark(c.benchmark,packs);if(c.mode==='performance')throw Error('Choose quality or combined mode for a benchmark pack.');}
  if(c.vision!==undefined&&!['auto','off','on'].includes(c.vision))throw Error('Invalid vision mode');
  if(c.mtp!==undefined&&!['off','on'].includes(c.mtp))throw Error('Invalid MTP mode');

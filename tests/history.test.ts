@@ -1,3 +1,4 @@
+import {performanceSummary} from '../src/performance-summary';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {defaultHistoryView,facetOptions,familyOf,groupHistory,matchesHistory,promptSizeOf,quantTier,restoreHistoryView,sizeBucket,sizeLabel,sortGroups,type HistoryRow,type HistoryView} from '../src/history';
@@ -5,7 +6,7 @@ import {historyRows} from '../electron/history';
 import {inferProfile} from '../src/model-profile';
 import {percentile} from '../electron/metrics';
 import type {Metrics,Run,Sample} from '../src/types';
-const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({
+const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({...performanceSummary([]),contextTarget:null,loadProfile:'waves',
  vision:'off',visionEffective:'',visionImagesSent:false,visionProjectorUnloaded:false,visionLimitation:'',
  mtp:'off',mtpDraftTokens:null,mtpDepth:null,draftAcceptance:null,draftMeanLen:null,model:'Gemma 4 12B',modelKey:'gemma-4-12b-it@iq3_xxs',test:'Short prompt throughput',testId:'perf-short',concurrency:1,
  requests:1,failures:0,failureRate:0,generationTps:null,estimatedPrefillTps:null,throughput:null,
@@ -57,6 +58,8 @@ test('size labels and buckets agree with the comparison ranges and never assume 
 test('performance prompt sizes are recognised and other tests stay unlabelled',()=>{
  assert.equal(promptSizeOf('perf-long'),'long');
  assert.equal(promptSizeOf('perf-medium'),'medium');
+ assert.equal(promptSizeOf('perf-context-4096'),'context-4096');
+ assert.equal(promptSizeOf('perf-short-context-512'),'context-512');
  assert.equal(promptSizeOf('gsm8k-17'),null);
  assert.equal(promptSizeOf(undefined),null);
 });
@@ -116,6 +119,16 @@ test('a group that pools more than one condition says so',()=>{
  const byPrompt=groupHistory([row(),row({runId:'r2',promptSize:'long',testId:'perf-long'})],view());
  assert.equal(byPrompt[0].mixed,true);
 });
+test('history filters and mixed-condition summaries preserve context targets and load profiles',()=>{
+ const waves=row({contextTarget:null,loadProfile:'waves'});
+ const sustainedContext=row({contextTarget:512,loadProfile:'sustained',promptSize:'context-512',testId:'perf-context-512'});
+ assert.equal(matchesHistory(sustainedContext,view({contextTargets:['512 tokens'],loadProfiles:['Sustained concurrency']})),true);
+ assert.equal(matchesHistory(waves,view({contextTargets:['512 tokens']})),false);
+ const [mixed]=groupHistory([waves,sustainedContext],view());
+ assert.equal(mixed.mixed,true);
+ assert.deepEqual(mixed.conditions.contextTargets,['512 tokens','No context sweep']);
+ assert.deepEqual(mixed.conditions.loadProfiles,['Fixed request waves','Sustained concurrency']);
+});
 test('regrouping moves rows without losing or duplicating requests',()=>{
  const rows=[row({requests:10}),row({runId:'r2',quantTier:'Q3',quantization:'Q3_K_XL',modelKey:'gemma-4-12b-it@q3_k_xl',requests:6}),row({runId:'r3',family:'Qwen',architecture:'qwen35',kind:'moe',quantTier:'IQ3',modelKey:'qwen3.6-35b-a3b@iq3_xxs',requests:4})];
  const total=(by:'model'|'family'|'quantTier'|'kind')=>groupHistory(rows,view(),{by}).reduce((n,g)=>n+g.requests,0);
@@ -168,4 +181,15 @@ test('saved runs become history rows with their facets, counts, and durations',(
  // A saved correction overrides the inferred architecture for every run it appears in.
  const corrected=historyRows([savedRun()],{'gemma-4-12b-it@iq3_xxs':{totalB:13,activeB:2,kind:'moe',source:'User supplied'}})[0];
  assert.deepEqual([corrected.kind,corrected.sizeLabel],['moe','13B']);
+});
+test('context-sweep history rows retain target and load profile, including legacy defaults',()=>{
+ const run=savedRun();
+ run.config.loadProfile='sustained';
+ run.tests[0]={...run.tests[0],id:'perf-context-2048',name:'Performance · ≈2048 input tokens',contextTokens:2048};
+ run.samples=run.samples.map(s=>({...s,testId:'perf-context-2048',testName:run.tests[0].name,contextTokens:2048}));
+ const [context]=historyRows([run],{});
+ assert.deepEqual([context.promptSize,context.contextTarget,context.loadProfile],['context-2048',2048,'sustained']);
+ const legacy=savedRun();
+ const [old]=historyRows([legacy],{});
+ assert.deepEqual([old.promptSize,old.contextTarget,old.loadProfile],['short',null,'waves']);
 });

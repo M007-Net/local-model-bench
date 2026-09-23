@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import type { Settings, Model, Metrics } from '../src/types';
 import { attachMtp } from './mtp';
-import { metrics } from './metrics';
+import { metrics, StreamTiming } from './metrics';
 
 // lmsPath is the one setting that becomes argv[0] of a real process, so a bare type
 // check is not enough: any string that happens to exist on disk would otherwise be
@@ -92,7 +92,7 @@ export function chatInput(prompt:string,image?:string){
 }
 export async function infer(settings:Settings,instance:string,prompt:string,maxTokens:number,temperature:number,reasoning:string,signal:AbortSignal,image?:string):Promise<Inference>{
  if(!isManagedEndpoint(settings))return inferCompatible(settings,instance,prompt,maxTokens,temperature,reasoning,signal,image);
- const began=performance.now();let start:number|null=null,end:number|null=null,first:number|null=null;let output='',thought='',rawStats:Record<string,unknown>={},ended=false,error:string|undefined;
+ const began=performance.now();let start:number|null=null,end:number|null=null,first:number|null=null;const streamTiming=new StreamTiming();let output='',thought='',rawStats:Record<string,unknown>={},ended=false,error:string|undefined;
  const timed=AbortSignal.timeout(settings.timeoutSec*1000);const combined=AbortSignal.any([signal,timed]);let status:Inference['status']='completed';
  try {
   const response=await fetch(validateUrl(settings.baseUrl)+'/api/v1/chat',{redirect:'error',method:'POST',headers:{'Content-Type':'application/json',...(settings.token?{Authorization:`Bearer ${settings.token}`}:{})},body:JSON.stringify({model:instance,input:chatInput(prompt,image),stream:true,store:false,integrations:[],temperature,max_output_tokens:maxTokens,...(reasoning!=='default'?{reasoning}:{})}),signal:combined});
@@ -102,8 +102,8 @@ export async function infer(settings:Settings,instance:string,prompt:string,maxT
   const accept=({event,data}:{event:string;data:any})=>{const now=performance.now()-began;
    if(event==='prompt_processing.start')start=now;
    if(event==='prompt_processing.end')end=now;
-   if(event==='message.delta'){output+=data.content??'';if(first===null&&data.content)first=now;}
-   if(event==='reasoning.delta'){thought+=data.content??'';if(first===null&&data.content)first=now;}
+   if(event==='message.delta'){const content=typeof data.content==='string'?data.content:'';output+=content;if(content){streamTiming.record(now);if(first===null)first=now;}}
+   if(event==='reasoning.delta'){const content=typeof data.content==='string'?data.content:'';thought+=content;if(content){streamTiming.record(now);if(first===null)first=now;}}
    if(event==='error')error=data.error?.message||'LM Studio stream error';
    if(event==='chat.end'){ended=true;const result=data.result;rawStats=result?.stats??{};if(Array.isArray(result?.output)){output=result.output.filter((x:any)=>x.type==='message').map((x:any)=>x.content).join('\n');thought=result.output.filter((x:any)=>x.type==='reasoning').map((x:any)=>x.content).join('\n');}}
   };
@@ -111,12 +111,13 @@ export async function infer(settings:Settings,instance:string,prompt:string,maxT
   if(error)throw Error(error);
   if(!ended)throw Error(`Stream disconnected before final statistics after ${output.length+thought.length} characters. LM Studio ended the response early; when this happens on every slot of a concurrency level, the shared context budget ran out. See the LM Studio server log.`);
  }catch(e){status=signal.aborted?'cancelled':timed.aborted?'timeout':'failed';error=(e as Error).message;}
- return {output,reasoning:thought,rawStats,metrics:metrics(rawStats,performance.now()-began,start,end,first),status,error,possibleTruncation:typeof rawStats.total_output_tokens==='number'&&rawStats.total_output_tokens>=maxTokens};
+ const measured=metrics(rawStats,performance.now()-began,start,end,first,streamTiming.summary(typeof rawStats.total_output_tokens==='number'?rawStats.total_output_tokens:null,status==='completed'));
+ return {output,reasoning:thought,rawStats,metrics:measured,status,error,possibleTruncation:typeof rawStats.total_output_tokens==='number'&&rawStats.total_output_tokens>=maxTokens};
 }
 // Compatible servers own model loading and report only statistics they expose.
 async function inferCompatible(settings:Settings,instance:string,prompt:string,maxTokens:number,temperature:number,reasoning:string,signal:AbortSignal,image?:string):Promise<Inference>{
  const began=performance.now(),timed=AbortSignal.timeout(settings.timeoutSec*1000),combined=AbortSignal.any([signal,timed]);
- let output='',thought='',first:number|null=null,ended=false,finish:string|null=null,error:string|undefined,status:Inference['status']='completed';
+ let output='',thought='',first:number|null=null,ended=false,finish:string|null=null,error:string|undefined,status:Inference['status']='completed';const streamTiming=new StreamTiming();
  let usage:Record<string,any>={},timings:Record<string,unknown>={};
  try{
   if(reasoning!=='default')throw Error('This endpoint uses its server reasoning defaults. Select Model default.');
@@ -133,9 +134,12 @@ async function inferCompatible(settings:Settings,instance:string,prompt:string,m
    for(const choice of data.choices??[]){
     if(choice.index!==undefined&&choice.index!==0)continue;
     const delta=choice.delta??{};
-    if(typeof delta.content==='string'){output+=delta.content;if(delta.content&&first===null)first=performance.now()-began;}
+    if(typeof delta.content==='string')output+=delta.content;
     const reasoningText=delta.reasoning_content??delta.reasoning;
-    if(typeof reasoningText==='string'){thought+=reasoningText;if(reasoningText&&first===null)first=performance.now()-began;}
+    if(typeof reasoningText==='string')thought+=reasoningText;
+    if((typeof delta.content==='string'&&delta.content.length>0)||(typeof reasoningText==='string'&&reasoningText.length>0)){
+     const now=performance.now()-began;streamTiming.record(now);if(first===null)first=now;
+    }
     if(choice.finish_reason){ended=true;finish=choice.finish_reason;}
    }
   };
@@ -144,7 +148,7 @@ async function inferCompatible(settings:Settings,instance:string,prompt:string,m
  }catch(e){status=signal.aborted?'cancelled':timed.aborted?'timeout':'failed';error=(e as Error).message;}
  const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>=0?v:null;
  const stats={input_tokens:number(usage.prompt_tokens),total_output_tokens:number(usage.completion_tokens),reasoning_output_tokens:number(usage.completion_tokens_details?.reasoning_tokens),tokens_per_second:number(timings.predicted_per_second)};
- const measured=metrics(stats,performance.now()-began,null,null,first);
+ const measured=metrics(stats,performance.now()-began,null,null,first,streamTiming.summary(number(usage.completion_tokens),status==='completed'));
  measured.ttftMs=first;
  measured.prefillMs=number(timings.prompt_ms);
  measured.prefillTps=number(timings.prompt_per_second);

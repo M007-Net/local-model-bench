@@ -6,6 +6,18 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.19.0 — 2026-09-22
+
+### Added
+
+- Client-observed first output and streaming-gap measurements, with per-request timing and p50/p95/p99 summaries. Reports clearly distinguish stream chunks from tokens.
+- Duration-based sustained concurrency tests that refill active request slots, then drain in-flight requests. The Results screen reports the actual completed requests and timing distribution.
+- Approximate input-context sweeps for speed-only runs, with requested and actual token counts kept separate. Results, history filters, CSV, Markdown, JSON, and graph reports retain the target.
+
+### Verified
+
+- Fixture UI covered 71 sustained requests across four context/concurrency combinations; live llama.cpp verification covered a real served Gemma 4 model.
+
 ## 1.18.2 — 2026-09-21
 
 ### Fixed
