@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {infer} from '../electron/lmstudio';
-import {StreamTiming} from '../electron/metrics';
+import {StreamTimelineTiming, StreamTiming} from '../electron/metrics';
 import {defaultSettings} from '../src/defaults';
 
 const compatible={...defaultSettings,provider:'llamacpp' as const,baseUrl:'http://127.0.0.1:8080'};
@@ -16,6 +16,48 @@ test('stream timing summarizes every observed event with bounded percentile stor
  assert.ok(result.p95GapMs!==null&&Math.abs(result.p95GapMs-10)<1);
  assert.equal(result.tpotMs,10);
  assert.match(result.method,/not exact token inter-token latency/);
+});
+
+test('stream timeline counts client-observed text and reasoning events in 1-second windows',()=>{
+ const timeline=new StreamTimelineTiming();
+ timeline.record(120,'text');
+ timeline.record(120,'reasoning');
+ timeline.record(1119.99,'text');
+ timeline.record(1120,'reasoning');
+ const summary=timeline.summary();
+ assert.deepEqual(summary.buckets,[
+  {startMs:0,textEvents:2,reasoningEvents:1},
+  {startMs:1000,textEvents:0,reasoningEvents:1},
+ ]);
+ assert.equal(summary.durationMs,1000);
+ assert.equal(summary.bucketWidthMs,1000);
+ assert.equal(summary.truncatedEvents,0);
+ assert.match(summary.method,/1-second windows/);
+ assert.match(summary.provenance,/Client-side/);
+ assert.match(summary.uncertainty,/not tokens/);
+});
+
+test('stream timeline handles zero-duration streams and identical timestamps',()=>{
+ const timeline=new StreamTimelineTiming();
+ timeline.record(25,'text');
+ timeline.record(25,'text');
+ timeline.record(25,'reasoning');
+ const summary=timeline.summary();
+ assert.equal(summary.durationMs,0);
+ assert.deepEqual(summary.buckets,[{startMs:0,textEvents:2,reasoningEvents:1}]);
+});
+
+test('stream timeline retains at most 512 buckets and reports later events as truncated',()=>{
+ const timeline=new StreamTimelineTiming();
+ timeline.record(0,'text');
+ timeline.record(511_999,'reasoning');
+ timeline.record(512_000,'text');
+ timeline.record(900_000,'reasoning');
+ const summary=timeline.summary();
+ assert.equal(summary.buckets.length,512);
+ assert.equal(summary.buckets[511].reasoningEvents,1);
+ assert.equal(summary.truncatedEvents,2);
+ assert.match(summary.uncertainty,/truncated/);
 });
 
 test('native LM Studio records only nonempty text and reasoning delta events',async t=>{

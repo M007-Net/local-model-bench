@@ -43,7 +43,7 @@ try{
  await page.waitForFunction(()=>document.body.innerText.includes('fixture-model'));
  await page.screenshot({path:path.join(out,'models.png'),fullPage:true});
  const snapshot=await page.evaluate(()=>window.bench.snapshot());
- assert.equal(snapshot.settings.provider,'llamacpp');assert.equal(snapshot.settings.baseUrl,baseUrl);
+ assert.equal(snapshot.settings.provider,'llamacpp');assert.equal(snapshot.settings.baseUrl,baseUrl+'/v1');
  assert.ok(!('token' in snapshot.settings));
  assert.deepEqual(await page.evaluate(()=>window.bench.runtimes()),[]);
  await page.locator('nav').getByRole('button',{name:'Settings',exact:true}).click();

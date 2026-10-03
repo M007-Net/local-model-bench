@@ -21,8 +21,8 @@ export const xValueOf=(r:ChartRow,axis:XAxis):number=>axis==='mtpDepth'?(r.mtpDe
 export const defaultXAxis=(depthsMeasured:number,concurrencyVaries:boolean):XAxis=>
  depthsMeasured>1&&!concurrencyVaries?'mtpDepth':'concurrency';
 export function chartSpecs(score:ScoreSource):ChartSpec[]{return [
- {key:'generationTps',title:'Generation speed',unit:'Tokens / second',description:'Average speed per successful request. Higher is faster.'},
- {key:'estimatedPrefillTps',title:'Estimated prefill speed',unit:'Tokens / second',description:'Client-timed prompt processing; caching and buffering can affect this estimate.'},
+ {key:'generationTps',title:'Reported generation speed',unit:'Tokens / second',description:'Endpoint-reported generation rate per successful request. Source and method can vary by provider.'},
+ {key:'estimatedPrefillTps',title:'Reported prompt-processing rate / estimate',unit:'Tokens / second',description:'Endpoint-specific prompt-processing metric; the per-row method explains whether it is server-reported or client-estimated.'},
  {key:'throughput',title:'Total throughput',unit:'Tokens / second',description:'Average completed output tokens per wave second, including time spent on failures.'},
  {key:score,title:scoreLabels[score],unit:'Score / 100',description:'Average of scored responses only. Unscored responses are not counted as zero.',fixedMax:100},
  {key:'ttftMs',title:'Time to first token',unit:'Seconds',description:'Average server-reported wait for the first token. Lower is faster.',scale:.001},
@@ -33,7 +33,7 @@ export function chartSpecs(score:ScoreSource):ChartSpec[]{return [
 ];}
 const start=(label:string)=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 290" role="img" aria-label="${escapeHtml(label)}"><style>text{font:12px 'Segoe UI',sans-serif;fill:#aab9bf}.grid{stroke:#334149;stroke-dasharray:3 5}.point{cursor:help}</style>`;
 const empty=(label:string)=>`${start(label)}<text x="300" y="132" text-anchor="middle">No measurements available yet</text><text x="300" y="158" text-anchor="middle">Missing values are not plotted as zero.</text></svg>`;
-export function renderChart(rows:ChartRow[],spec:ChartSpec,score:ScoreSource='objective',xAxis:XAxis='concurrency'):string{
+export function renderChart(rows:ChartRow[],spec:ChartSpec,score:ScoreSource='objective',xAxis:XAxis='concurrency',connectPoints=true):string{
  const scatter=spec.key==='scatter';
  const val=(r:ChartRow):number|null=>{const n=scatter?r[score]:r[spec.key as Metric];return typeof n==='number'&&Number.isFinite(n)?n*(spec.scale??1):null;};
  const usable=rows.filter(r=>val(r)!==null&&(!scatter||r.generationTps!==null));
@@ -54,7 +54,7 @@ export function renderChart(rows:ChartRow[],spec:ChartSpec,score:ScoreSource='ob
   const rs=rows.filter(r=>r.modelKey===key).sort((a,b)=>xValueOf(a,xAxis)-xValueOf(b,xAxis)),color=colorFor(key);
   let segment:string[]=[];
   const flush=()=>{if(segment.length>1)svg+=`<polyline points="${segment.join(' ')}" fill="none" stroke="${color}" stroke-width="2.5" ${i%2?'stroke-dasharray="7 3"':''}/>`;segment=[];};
-  if(!scatter){for(const r of rs){const v=val(r);if(v===null){flush();continue;}segment.push(`${x(xValueOf(r,xAxis))},${y(v)}`);}flush();}
+  if(!scatter&&connectPoints){for(const r of rs){const v=val(r);if(v===null){flush();continue;}segment.push(`${x(xValueOf(r,xAxis))},${y(v)}`);}flush();}
   for(const r of rs){const v=val(r);if(v===null||(scatter&&r.generationTps===null))continue;const cx=x(scatter?r.generationTps!:xValueOf(r,xAxis)),cy=y(v);const title=`${r.modelKey} • ${xAxis==='mtpDepth'?(r.mtpDepth?`${r.mtpDepth} draft token${r.mtpDepth===1?'':'s'}`:'MTP off')+` • concurrency ${r.concurrency}`:`concurrency ${r.concurrency}`} • ${scatter?fmt(r.generationTps!)+' tok/s • ':''}${fmt(v)} ${scatter?'score':spec.unit} • ${r.requests} requests, ${r.failures} failures`;
    svg+=`<circle class="point" cx="${cx}" cy="${cy}" r="${scatter?6:4.5}" fill="${color}" stroke="#141c20" stroke-width="1.5" tabindex="0" role="button" data-model="${escapeHtml(r.modelKey)}" data-concurrency="${r.concurrency}" data-mtp-depth="${r.mtpDepth??''}" data-tooltip="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title></circle>`;
   }

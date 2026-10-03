@@ -3,13 +3,14 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { GpuStats, GpuTick, RunGpu } from '../src/types';
 import { downsample, statsFrom, windowStats } from '../src/gpu-stats';
+import { integrateGpuEnergy, type GpuEnergyEstimate } from '../src/gpu-energy';
 
-export type GpuSampler={window(from:number,to:number):GpuStats|null;summary(from:number,to:number):RunGpu;stop():void};
+export type GpuSampler={window(from:number,to:number):GpuStats|null;summary(from:number,to:number):RunGpu;energy?(from:number,to:number):GpuEnergyEstimate;stop():void};
 type Device={ticks:GpuTick[];memoryTotal:number|null;peakPower:number};
 const SERIES_LIMIT=3000,TICK_LIMIT=43200;
 const finite=(v:unknown):number|null=>typeof v==='number'&&Number.isFinite(v)?v:null;
 const unavailable=(note:string,intervalMs:number):RunGpu=>({available:false,device:null,devices:[],intervalMs,note,stats:null,perDevice:{},series:[],seriesNote:''});
-export function idleSampler(note:string,intervalMs=0):GpuSampler{return {window:()=>null,summary:()=>unavailable(note,intervalMs),stop(){}};}
+export function idleSampler(note:string,intervalMs=0):GpuSampler{return {window:()=>null,summary:()=>unavailable(note,intervalMs),energy:(from,to)=>({...integrateGpuEnergy([],from,to,null,intervalMs||1),note}),stop(){}};}
 
 // Reads GPU sensors through LibreHardwareMonitor in a separate PowerShell process. Sampling is
 // best effort: a run is never failed or delayed because telemetry is missing, and every value the
@@ -67,6 +68,9 @@ export function startGpuSampler(vendorDir:string|undefined,intervalMs:number,log
  const ticksOf=(name:string)=>devices.get(name)?.ticks??[];
  return {
   window(from,to){const name=primary();return name?windowStats(ticksOf(name),from,to,interval):null;},
+  // Integrate the selected card's un-downsampled raw sensor samples. Chart thinning
+  // is deliberately applied only by summary(), after this telemetry is retained.
+  energy(from,to){const name=primary();return integrateGpuEnergy(name?ticksOf(name).map(t=>({t:t.t,power:t.power})):[],from,to,name||null,interval);},
   summary(from,to){
    const name=primary();
    if(!name)return unavailable(failed||'GPU telemetry produced no readings for this run.',interval);

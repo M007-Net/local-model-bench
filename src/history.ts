@@ -87,9 +87,9 @@ export const facetKeys=Object.keys(facetValue) as FacetKey[];
 export const facetLabels:Record<FacetKey,string>={families:'Model family',kinds:'Architecture',sizes:'Parameters',quantTiers:'Quantization tier',quants:'Exact quantization',concurrency:'Concurrent requests',promptSizes:'Prompt size',contextTargets:'Context target',loadProfiles:'Load profile',benchmarks:'Benchmark pack',mtp:'Native MTP',mtpDepth:'MTP depth',vision:'Vision',reasoning:'Reasoning',statuses:'Run status',backends:'Inference engine'};
 export const modelFacets:FacetKey[]=['families','kinds','sizes','quantTiers','quants'];
 export const conditionFacets:FacetKey[]=['backends','benchmarks','concurrency','promptSizes','contextTargets','loadProfiles','mtp','mtpDepth','vision','reasoning','statuses'];
-export const groupOptions={model:'Model',family:'Model family',kind:'Dense vs MoE',size:'Parameters',sizeBucket:'Size range',quantTier:'Quantization tier',quantization:'Exact quantization',benchmark:'Benchmark pack',backend:'Inference engine'} as const;
+export const groupOptions={none:'None (separate measurements)',model:'Model',family:'Model family',kind:'Dense vs MoE',size:'Parameters',sizeBucket:'Size range',quantTier:'Quantization tier',quantization:'Exact quantization',benchmark:'Benchmark pack',backend:'Inference engine'} as const;
 export type GroupBy=keyof typeof groupOptions;
-export const groupValue:Record<GroupBy,(r:HistoryRow)=>string>={model:r=>r.modelKey,family:r=>r.family,kind:r=>kindLabel(r.kind),size:r=>r.sizeLabel,sizeBucket:r=>r.sizeBucket,quantTier:r=>r.quantTier,quantization:r=>r.quantization||unknownFacet,benchmark:r=>r.benchmarkPack??ownTests,backend:r=>r.backend};
+export const groupValue:Record<GroupBy,(r:HistoryRow)=>string>={none:r=>r.modelKey,model:r=>r.modelKey,family:r=>r.family,kind:r=>kindLabel(r.kind),size:r=>r.sizeLabel,sizeBucket:r=>r.sizeBucket,quantTier:r=>r.quantTier,quantization:r=>r.quantization||unknownFacet,benchmark:r=>r.benchmarkPack??ownTests,backend:r=>r.backend};
 export const sortOptions={label:'Name',runs:'Runs',requests:'Requests',generationTps:'Generation tok/s',estimatedPrefillTps:'Prefill tok/s',prefillCalibratedTps:'Prefill tok/s (calibrated)',throughput:'Total tok/s',medianMs:'Median latency',p95Ms:'p95 latency',failureRate:'Failure rate',objective:'Objective score',localJudge:'Local judge',gpuHotSpotMax:'GPU hot spot peak'} as const;
 export type SortKey=keyof typeof sortOptions;
 export type HistoryView={search:string;groupBy:GroupBy;sort:SortKey;descending:boolean}&Record<FacetKey,string[]>;
@@ -184,9 +184,9 @@ function aggregate(key:string,label:string,rows:HistoryRow[]):HistoryGroup{
 }
 export function groupHistory(rows:HistoryRow[],view:HistoryView,options:{by?:GroupBy;splitConcurrency?:boolean}={}):HistoryGroup[]{
  const by=options.by??view.groupBy,map=new Map<string,{label:string;rows:HistoryRow[]}>();
- for(const row of rows){
+ for(const [index,row] of rows.entries()){
   if(!matchesHistory(row,view))continue;
-  const label=groupValue[by](row),key=options.splitConcurrency?label+' '+row.concurrency:label;
+  const label=groupValue[by](row),key=by==='none'?JSON.stringify([row.runId,row.modelKey,row.testId,row.concurrency,row.mtpDepth,index]):options.splitConcurrency?label+' '+row.concurrency:label;
   const entry=map.get(key)??{label,rows:[]};entry.rows.push(row);map.set(key,entry);
  }
  return [...map.entries()].map(([key,{label,rows}])=>aggregate(key,label,rows));

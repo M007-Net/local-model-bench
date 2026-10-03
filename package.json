@@ -1,6 +1,6 @@
 {
   "name": "local-model-bench",
-  "version": "1.19.0",
+  "version": "1.19.4",
   "description": "Desktop benchmarks and transparent grading for LM Studio, llama.cpp, and compatible endpoints",
   "author": "Local Model Bench contributors",
   "license": "MIT",

@@ -1,5 +1,5 @@
 import {assertRetryEndpoint} from './run-endpoint';
-import {isManagedEndpoint,canManageLocally,validateUrl} from '../src/endpoint';
+import {isManagedEndpoint,canManageLocally,validateUrl,endpointIdentity} from '../src/endpoint';
 import { app, BrowserWindow, ipcMain, dialog, clipboard, safeStorage, shell } from 'electron';
 import { Worker } from 'node:worker_threads';
 import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
@@ -14,8 +14,9 @@ import { defaultSettings, starterTests, performanceTest } from '../src/defaults'
 import { awaitIndexed, createTextOnly, planTextOnly, removeTextOnly, textOnlyTwins } from './text-only';
 import type { Run, RunConfig, Settings, PublicSettings, SettingsUpdate, TestCase, Sample, Progress } from '../src/types';
 import { cli, listModels, resolveLms } from './lmstudio';
-import { listRuntimes } from './runtime';
+import { listRuntimes,backendOf } from './runtime';
 import {contextWorkloads} from '../src/load-profile';
+import {createBenchmarkEnvironment} from '../src/benchmark-environment';
 import { validateConfig, validateSettings, validateTest } from './validation';
 import { gradingPackage, parseGrade } from './scoring';
 import { exportText } from './export';
@@ -41,6 +42,19 @@ let agenticWorker:Worker|null=null,agenticProgress:AgenticProgress|null=null;
 let historyCache:{fingerprint:string;rows:ReturnType<typeof historyRows>}|null=null;
 let updateState:UpdateState={phase:'idle',info:null,received:0,total:0,file:'',sha256:'',verified:false,error:'',checked:'',current:''};
 let updateBusy=false;
+const clientEnvironment=()=>({platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model?.trim()??null,logicalCpus:os.cpus().length,availableParallelism:os.availableParallelism?.()??os.cpus().length,totalMemoryBytes:os.totalmem(),node:process.versions.node,electron:process.versions.electron,appVersion:app.getVersion()});
+function refreshStructuredEnvironment(run:Run,loaded=false){
+ const entries=Object.entries(run.modelInfo).map(([id,value])=>({id,info:value&&typeof value==='object'?value as Record<string,unknown>:{} }));
+ const models=entries.map(({id,info})=>({id,model:info.model as Record<string,unknown>|undefined})).filter((item):item is {id:string;model:Record<string,unknown>}=>!!item.model&&typeof item.model==='object'&&!Array.isArray(item.model));
+ const effectiveConfigurations:Record<string,Record<string,unknown>|null>={};
+ for(const {id,info} of entries){
+  const model=info.model as Record<string,unknown>|undefined,instance=info.instance as Record<string,unknown>|undefined;
+  const config=instance?.config&&typeof instance.config==='object'&&!Array.isArray(instance.config)?instance.config as Record<string,unknown>:null;
+  if(model&&config)effectiveConfigurations[id]=config;
+ }
+ const runtimeInfo=loaded&&run.environment.serverSettings==='Managed LM Studio instance'?backendOf(run):null;
+ run.environment={...run.environment,...createBenchmarkEnvironment({client:clientEnvironment(),provider:String(run.environment.provider??'lmstudio'),endpoint:String(run.environment.endpoint??''),models,effectiveConfigurations,effectiveRuntime:runtimeInfo?.ref?{label:runtimeInfo.label,ref:runtimeInfo.ref,version:runtimeInfo.version}:null})};
+}
 const updateDir=()=>path.join(app.getPath('temp'),'local-model-bench-update');
 function notifyUpdate(patch:Partial<UpdateState>){updateState={...updateState,...patch};win?.webContents.send('bench:update',updateState);}
 // Nothing here runs unless a repository is named and the check is switched on, so the default install makes
@@ -141,7 +155,7 @@ function launch(run:Run,retries?:Sample[],gradeOnly=false){assertIdle();activeRu
   if(event.type==='sample')store.saveSample(event.sample);
   if(event.type==='wave')store.saveWave(event.wave);
   if(event.type==='grade'){const {sample}=getPair(run.id,event.sampleId);sample.grades.push(event.grade);store.saveSample(sample);}
-  if(event.type==='model'){run.modelInfo[event.key]=event.info;store.saveRun(run);}
+  if(event.type==='model'){run.modelInfo[event.key]=event.info;refreshStructuredEnvironment(run,true);store.saveRun(run);}
   if(event.type==='log'){run.logs.push(new Date().toLocaleTimeString()+' '+event.message);store.saveRun(run);}
   if(event.type==='gpu'&&!gradeOnly){run.gpu=event.gpu;store.saveRun(run);}
   if(event.type==='progress'){progress=event.progress;if(event.progress.phase==='grading'&&run.status!=='grading'){run.status='grading';store.saveRun(run);}notify();}
@@ -167,6 +181,7 @@ async function newRun(config:RunConfig,retries?:Sample[],source?:Run){
  if(!tests.length)throw Error('Select at least one available test.');if(config.mode!=='performance'&&!source&&!config.benchmark&&config.testIds.some(id=>!tests.some(t=>t.id===id)))throw Error('A selected test was deleted. Refresh your selection.');
  const now=new Date().toISOString();let runtime='Configured on endpoint server';try{if(canManageLocally(settings()))runtime=await cli(settings(),['runtime','ls']);}catch{}
  const run:Run={id:randomUUID(),created:now,updated:now,status:'running',config:{...config,name:config.name.trim()||new Date().toLocaleString()},tests,modelInfo:Object.fromEntries(models.filter(m=>config.modelKeys.includes(m.key)).map(model=>[model.key,{model}])),environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,totalMemory:os.totalmem(),node:process.versions.node,electron:process.versions.electron,appVersion:app.getVersion(),provider:settings().provider??'lmstudio',serverSettings:isManagedEndpoint(settings())?'Managed LM Studio instance':'Server owns context, cache, GPU and model lifetime',runtime,endpoint:settings().baseUrl,judgePrompt:settings().judgePrompt,cachePolicy:'Fresh state, deterministic leading variants; prefix caching cannot be fully disabled through this API.',vision:{requested:config.vision??'auto',projectorToggle,note:noProjectorToggleNote}},logs:[],samples:[],waves:[]};
+ refreshStructuredEnvironment(run);
  if(retries)run.logs.push(`Retry of ${source?.id}. Only failed/cancelled requests are retried with exact original prompts. Partial waves use the actual retried request count; compare separately.`);
  return launch(run,retries);
 }
@@ -220,7 +235,7 @@ if(locked)app.whenReady().then(()=>{
   // An omitted token means "leave the stored one alone". The window never
   // received it and so cannot send it back; only an explicit empty string
   // clears it.
-  let encryptedToken=validateUrl(current.baseUrl)===validateUrl(s.baseUrl)&&(current.provider??'lmstudio')===(s.provider??'lmstudio')?current.encryptedToken:undefined;
+  let encryptedToken=endpointIdentity(current)===endpointIdentity(s)&&(current.provider??'lmstudio')===(s.provider??'lmstudio')?current.encryptedToken:undefined;
   if(s.token!==undefined){
    if(s.token&&!safeStorage.isEncryptionAvailable())throw Error('Windows credential encryption is unavailable. Token was not saved.');
    encryptedToken=s.token?safeStorage.encryptString(s.token).toString('base64'):undefined;

@@ -11,15 +11,15 @@ import {overlayOptions,overlayRows,stillOffered} from './chart-compare';
 const depthSuffix=' · MTP ';
 // The legend, graph grid, and hover tooltip are shared by the single-run graphs and the history overview,
 // which feeds in pooled rows keyed by group label instead of by model key.
-export function ChartGrid({rows,score,onModel,xAxis='concurrency',hint='Click a point to inspect its model and responses.'}:{rows:ChartRow[];score:ScoreSource;onModel?:(key:string)=>void;xAxis?:XAxis;hint?:string}){
+export function ChartGrid({rows,score,onModel,xAxis='concurrency',hint='Click a point to inspect its model and responses.',connectPoints=true}:{rows:ChartRow[];score:ScoreSource;onModel?:(key:string)=>void;xAxis?:XAxis;hint?:string;connectPoints?:boolean}){
  const [tip,setTip]=useState('');
  const show=(target:EventTarget)=>{const point=(target as Element).closest?.('[data-tooltip]');setTip(point?.getAttribute('data-tooltip')??'');};
  return <><div className="legend chart-legend" dangerouslySetInnerHTML={{__html:legendHtml(rows)}}/>
- <div className="chart-grid" onMouseOver={e=>show(e.target)} onMouseLeave={()=>setTip('')} onFocus={e=>show(e.target)} onBlur={()=>setTip('')} onClick={e=>{const key=(e.target as Element).closest('[data-model]')?.getAttribute('data-model');if(key)onModel?.(key);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){const key=(e.target as Element).getAttribute('data-model');if(key){e.preventDefault();onModel?.(key);}}}}>{chartSpecs(score).map(spec=><section className="panel auto-chart" key={spec.key}><h3>{spec.title}</h3><p className="hint">{spec.description}</p><div dangerouslySetInnerHTML={{__html:renderChart(rows,spec,score,xAxis)}}/></section>)}</div>
+ <div className="chart-grid" onMouseOver={e=>show(e.target)} onMouseLeave={()=>setTip('')} onFocus={e=>show(e.target)} onBlur={()=>setTip('')} onClick={e=>{const key=(e.target as Element).closest('[data-model]')?.getAttribute('data-model');if(key)onModel?.(key);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){const key=(e.target as Element).getAttribute('data-model');if(key){e.preventDefault();onModel?.(key);}}}}>{chartSpecs(score).map(spec=><section className="panel auto-chart" key={spec.key}><h3>{spec.title}</h3><p className="hint">{spec.description}</p><div dangerouslySetInnerHTML={{__html:renderChart(rows,spec,score,xAxis,connectPoints)}}/></section>)}</div>
  {tip&&<div className="graph-tooltip" role="tooltip">{tip}<small>{hint}</small></div>}
  </>;
 }
-export function ChartsPanel({run,onModel,history=[]}:{run:Run;onModel?:(key:string)=>void;history?:HistoryRow[]}){
+export function ChartsPanel({run,onModel,history=[],groupBy='measurement'}:{groupBy?:'measurement'|'none';run:Run;onModel?:(key:string)=>void;history?:HistoryRow[]}){
  const [testId,setTestId]=useState(''),[score,setScore]=useState<ScoreSource>('objective');
  // Which saved series are drawn beside this run. Ids rather than rows, so a selection survives the
  // history being reloaded underneath it.
@@ -38,11 +38,11 @@ export function ChartsPanel({run,onModel,history=[]}:{run:Run;onModel?:(key:stri
  // must not keep drawing an axis that no longer varies.
  const axis:XAxis=depths.length<=1?'concurrency':xAxis??defaultXAxis(depths.length,concurrencyVaries);
  const own=useMemo(()=>{
-  const all=summaries(run).filter(r=>r.testId===chosen);
+  const all=summaries(run,groupBy).filter(r=>r.testId===chosen);
   // Depth goes into the series name only when it is not the axis. Doing both would split each
   // model into one flat single-point line per depth rather than a curve across them.
   return depths.length>1&&axis!=='mtpDepth'?all.map(r=>({...r,modelKey:`${r.modelKey} · ${mtpDepthText(r.mtpDepth)}`})):all;
- },[run,chosen,depths,axis]);
+ },[run,chosen,depths,axis,groupBy]);
  const backend=useMemo(()=>backendOf(run).label,[run]);
  const models=useMemo(()=>[...new Set(summaries(run).map(r=>r.modelKey))],[run]);
  const options=useMemo(()=>overlayOptions(history,run.id,chosen??'',backend,models),[history,run.id,chosen,backend,models]);
@@ -64,6 +64,6 @@ export function ChartsPanel({run,onModel,history=[]}:{run:Run;onModel?:(key:stri
     <p className="hint">Saved rows from finished runs, drawn as their own lines. Nothing is recalculated, and conditions can differ between runs.</p>
    </div></details>}
  </div></div>
- <ChartGrid rows={rows} score={score} xAxis={axis} onModel={key=>onModel?.(key.split(depthSuffix)[0])}/>
+ <ChartGrid rows={rows} connectPoints={groupBy!=='none'} score={score} xAxis={axis} onModel={key=>onModel?.(key.split(depthSuffix)[0])}/>
  </section>;
 }

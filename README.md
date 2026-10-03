@@ -176,15 +176,17 @@ the next launch.
 Open **Settings**, choose the provider, enter its server address and optional API
 token, then save and refresh the model list. The connection status describes the
 saved endpoint. Changing the address in the form takes effect after saving.
-Use the server origin, such as `http://127.0.0.1:8080`; a trailing `/v1` is also
-accepted and normalized to that origin. Other paths, queries, fragments, and
-credentials embedded in the address are not accepted.
+For compatible APIs, use the server origin, such as `http://127.0.0.1:8080`,
+to call `/v1/models` and `/v1/chat/completions`. If the API uses another prefix,
+include it in the address, such as `https://server.example/api`, to call
+`/api/models` and `/api/chat/completions`. Queries, fragments, encoded path
+characters, and credentials embedded in the address are not accepted.
 
 | Provider | Typical address | How models are used |
 | --- | --- | --- |
 | LM Studio | `http://127.0.0.1:1234` | Native model discovery and chat; local managed runs can load and verify model settings. |
 | llama.cpp | `http://127.0.0.1:8080` | Uses the models served by `llama-server` through OpenAI-compatible discovery and chat. |
-| OpenAI-compatible | Your server's HTTP(S) address | Requires `/v1/models` and streaming `/v1/chat/completions`; compatibility depends on the server. |
+| OpenAI-compatible | Your server's HTTP(S) address and optional API prefix | Requires a models list and streaming chat completions under that prefix; compatibility depends on the server. |
 
 For llama.cpp and compatible servers, start and configure the server yourself.
 The app sends benchmark requests to its available models and leaves them loaded.
@@ -206,7 +208,7 @@ for authentication. Model files are never downloaded by this app.
 
 ## Model compatibility
 
-There is no built-in model list or model-family allowlist. Refresh discovers models through LM Studio's native `/api/v1/models` endpoint or the compatible `/v1/models` endpoint for the selected provider. Add or remove models on that server; no application code changes are needed for new model names, publishers, architectures, or quantizations.
+There is no built-in model list or model-family allowlist. Refresh discovers models through LM Studio's native `/api/v1/models` endpoint or the compatible `/models` endpoint under the selected API prefix (`/v1` by default). Add or remove models on that server; no application code changes are needed for new model names, publishers, architectures, or quantizations.
 
 LM Studio native mode uses its CLI to load models and verify context and parallel settings. llama.cpp and OpenAI-compatible mode use server-managed models without local loading. Embeddings, image generation, and direct execution of standalone model checkpoints are outside these backends. Provider-specific extensions are not assumed from an OpenAI-compatible label.
 

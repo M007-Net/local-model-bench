@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import type { Settings, Model, Metrics } from '../src/types';
 import { attachMtp } from './mtp';
-import { metrics, StreamTiming } from './metrics';
+import { clientDecodeEstimate, metrics, StreamTiming, StreamTimelineTiming } from './metrics';
 
 // lmsPath is the one setting that becomes argv[0] of a real process, so a bare type
 // check is not enough: any string that happens to exist on disk would otherwise be
@@ -27,7 +27,7 @@ export function resolveLms(settings:Settings){if(!canManageLocally(settings))thr
 export function cli(settings:Settings,args:string[],signal?:AbortSignal):Promise<string>{return new Promise((resolve,reject)=>execFile(resolveLms(settings),args,{windowsHide:true,timeout:settings.loadTimeoutSec*1000,maxBuffer:8*1024*1024,signal},(error,stdout,stderr)=>error?reject(new Error(readableCliError(`${error.message}\n${stderr}\n${stdout}`))):resolve(stdout.trim())));}
 // The endpoint rules live in src/endpoint.ts so the window can use them too; that module is free
 // of node: imports, which this one is not.
-import {validateUrl,isManagedEndpoint,canManageLocally,providerLabel} from '../src/endpoint';
+import {validateUrl,isManagedEndpoint,canManageLocally,providerLabel,compatibleBaseUrl} from '../src/endpoint';
 export {isLoopbackUrl,loopbackHosts,validateUrl} from '../src/endpoint';
 // fetch rejects with a bare "TypeError: fetch failed" and keeps the real errno one
 // level down in .cause. For an app whose entire job is talking to LM Studio, that is
@@ -59,7 +59,7 @@ export async function api(settings:Settings,endpoint:string,body?:unknown,signal
 }
 export async function listModels(settings:Settings):Promise<Model[]>{
  if(isManagedEndpoint(settings)){const data=await api(settings,'/api/v1/models');return canManageLocally(settings)?attachMtp(normalizeModels(data.models)):normalizeModels(data.models);}
- const data=await api(settings,'/v1/models');
+ const data=await api({...settings,baseUrl:compatibleBaseUrl(settings.baseUrl)},'/models');
  if(!Array.isArray(data?.data))throw Error('The endpoint did not return an OpenAI-compatible model list.');
  const seen=new Set<string>();
  const positiveInteger=(value:unknown)=>typeof value==='number'&&Number.isSafeInteger(value)&&value>0?value:0;
@@ -92,7 +92,7 @@ export function chatInput(prompt:string,image?:string){
 }
 export async function infer(settings:Settings,instance:string,prompt:string,maxTokens:number,temperature:number,reasoning:string,signal:AbortSignal,image?:string):Promise<Inference>{
  if(!isManagedEndpoint(settings))return inferCompatible(settings,instance,prompt,maxTokens,temperature,reasoning,signal,image);
- const began=performance.now();let start:number|null=null,end:number|null=null,first:number|null=null;const streamTiming=new StreamTiming();let output='',thought='',rawStats:Record<string,unknown>={},ended=false,error:string|undefined;
+ const began=performance.now();let start:number|null=null,end:number|null=null,first:number|null=null;const streamTiming=new StreamTiming(),timeline=new StreamTimelineTiming();let output='',thought='',rawStats:Record<string,unknown>={},ended=false,error:string|undefined;
  const timed=AbortSignal.timeout(settings.timeoutSec*1000);const combined=AbortSignal.any([signal,timed]);let status:Inference['status']='completed';
  try {
   const response=await fetch(validateUrl(settings.baseUrl)+'/api/v1/chat',{redirect:'error',method:'POST',headers:{'Content-Type':'application/json',...(settings.token?{Authorization:`Bearer ${settings.token}`}:{})},body:JSON.stringify({model:instance,input:chatInput(prompt,image),stream:true,store:false,integrations:[],temperature,max_output_tokens:maxTokens,...(reasoning!=='default'?{reasoning}:{})}),signal:combined});
@@ -102,8 +102,8 @@ export async function infer(settings:Settings,instance:string,prompt:string,maxT
   const accept=({event,data}:{event:string;data:any})=>{const now=performance.now()-began;
    if(event==='prompt_processing.start')start=now;
    if(event==='prompt_processing.end')end=now;
-   if(event==='message.delta'){const content=typeof data.content==='string'?data.content:'';output+=content;if(content){streamTiming.record(now);if(first===null)first=now;}}
-   if(event==='reasoning.delta'){const content=typeof data.content==='string'?data.content:'';thought+=content;if(content){streamTiming.record(now);if(first===null)first=now;}}
+   if(event==='message.delta'){const content=typeof data.content==='string'?data.content:'';output+=content;if(content){streamTiming.record(now);timeline.record(now,'text');if(first===null)first=now;}}
+   if(event==='reasoning.delta'){const content=typeof data.content==='string'?data.content:'';thought+=content;if(content){streamTiming.record(now);timeline.record(now,'reasoning');if(first===null)first=now;}}
    if(event==='error')error=data.error?.message||'LM Studio stream error';
    if(event==='chat.end'){ended=true;const result=data.result;rawStats=result?.stats??{};if(Array.isArray(result?.output)){output=result.output.filter((x:any)=>x.type==='message').map((x:any)=>x.content).join('\n');thought=result.output.filter((x:any)=>x.type==='reasoning').map((x:any)=>x.content).join('\n');}}
   };
@@ -111,23 +111,27 @@ export async function infer(settings:Settings,instance:string,prompt:string,maxT
   if(error)throw Error(error);
   if(!ended)throw Error(`Stream disconnected before final statistics after ${output.length+thought.length} characters. LM Studio ended the response early; when this happens on every slot of a concurrency level, the shared context budget ran out. See the LM Studio server log.`);
  }catch(e){status=signal.aborted?'cancelled':timed.aborted?'timeout':'failed';error=(e as Error).message;}
- const measured=metrics(rawStats,performance.now()-began,start,end,first,streamTiming.summary(typeof rawStats.total_output_tokens==='number'?rawStats.total_output_tokens:null,status==='completed'));
+ const measured=metrics(rawStats,performance.now()-began,start,end,first,streamTiming.summary(typeof rawStats.total_output_tokens==='number'?rawStats.total_output_tokens:null,status==='completed',timeline.summary()));
  return {output,reasoning:thought,rawStats,metrics:measured,status,error,possibleTruncation:typeof rawStats.total_output_tokens==='number'&&rawStats.total_output_tokens>=maxTokens};
 }
 // Compatible servers own model loading and report only statistics they expose.
 async function inferCompatible(settings:Settings,instance:string,prompt:string,maxTokens:number,temperature:number,reasoning:string,signal:AbortSignal,image?:string):Promise<Inference>{
  const began=performance.now(),timed=AbortSignal.timeout(settings.timeoutSec*1000),combined=AbortSignal.any([signal,timed]);
- let output='',thought='',first:number|null=null,ended=false,finish:string|null=null,error:string|undefined,status:Inference['status']='completed';const streamTiming=new StreamTiming();
+ let output='',thought='',first:number|null=null,ended=false,finish:string|null=null,error:string|undefined,status:Inference['status']='completed';const streamTiming=new StreamTiming(),timeline=new StreamTimelineTiming();
+ let responseStatus:number|null=null,streamBytes=0,streamEvents=0,streamTransportWarning:string|null=null;
  let usage:Record<string,any>={},timings:Record<string,unknown>={};
  try{
   if(reasoning!=='default')throw Error('This endpoint uses its server reasoning defaults. Select Model default.');
   if(image&&!image.startsWith('data:image/'))throw Error('A benchmark image must be a local data URL.');
   const content=image?[{type:'text',text:prompt},{type:'image_url',image_url:{url:image}}]:prompt;
-  const response=await fetch(validateUrl(settings.baseUrl)+'/v1/chat/completions',{redirect:'error',method:'POST',headers:{'Content-Type':'application/json',...(settings.token?{Authorization:`Bearer ${settings.token}`}:{})},body:JSON.stringify({model:instance,messages:[{role:'user',content}],stream:true,stream_options:{include_usage:true},temperature,max_tokens:maxTokens}),signal:combined});
+  const base=compatibleBaseUrl(settings.baseUrl);
+  const response=await fetch(base+'/chat/completions',{redirect:'error',method:'POST',headers:{'Content-Type':'application/json',...(settings.token?{Authorization:`Bearer ${settings.token}`}:{})},body:JSON.stringify({model:instance,messages:[{role:'user',content}],stream:true,...(new URL(base).pathname==='/v1'?{stream_options:{include_usage:true}}:{}),temperature,max_tokens:maxTokens}),signal:combined});
+  responseStatus=response.status;
   if(!response.ok)throw Error(`${providerLabel(settings.provider)} HTTP ${response.status}: ${(await response.text()).slice(0,1600)}`);
   if(!response.body)throw Error('Missing response stream');
   const decoder=new SSEDecoder(),reader=response.body.getReader();
   const accept=({data}:{data:any})=>{
+   streamEvents++;
    if(data.error)throw Error(data.error.message||'Endpoint stream error');
    if(data.usage)usage=data.usage;
    if(data.timings)timings=data.timings;
@@ -138,21 +142,40 @@ async function inferCompatible(settings:Settings,instance:string,prompt:string,m
     const reasoningText=delta.reasoning_content??delta.reasoning;
     if(typeof reasoningText==='string')thought+=reasoningText;
     if((typeof delta.content==='string'&&delta.content.length>0)||(typeof reasoningText==='string'&&reasoningText.length>0)){
-     const now=performance.now()-began;streamTiming.record(now);if(first===null)first=now;
+     const now=performance.now()-began;streamTiming.record(now);if(typeof delta.content==='string'&&delta.content.length)timeline.record(now,'text');if(typeof reasoningText==='string'&&reasoningText.length)timeline.record(now,'reasoning');if(first===null)first=now;
     }
     if(choice.finish_reason){ended=true;finish=choice.finish_reason;}
    }
   };
-  try{while(true){const {done,value}=await reader.read();if(done){decoder.feed(new Uint8Array(),true).forEach(accept);break;}decoder.feed(value).forEach(accept);}}finally{reader.releaseLock();}
+  try{while(true){const {done,value}=await reader.read();if(done){decoder.feed(new Uint8Array(),true).forEach(accept);break;}streamBytes+=value.byteLength;decoder.feed(value).forEach(accept);}}
+  catch(e){
+   const cause=(e as {cause?:{code?:string}})?.cause?.code;
+   if(!ended||signal.aborted||timed.aborted||(e as Error).message!=='terminated'||cause!=='UND_ERR_SOCKET')throw e;
+   // The provider already sent a finish reason. A subsequent socket reset may
+   // omit optional usage or [DONE], but cannot invalidate the completed answer.
+   streamTransportWarning='Socket closed after the finish reason; final usage may be unavailable.';
+  }finally{reader.releaseLock();}
   if(!ended)throw Error('The endpoint stream disconnected before a finish reason was received.');
- }catch(e){status=signal.aborted?'cancelled':timed.aborted?'timeout':'failed';error=(e as Error).message;}
+ }catch(e){status=signal.aborted?'cancelled':timed.aborted?'timeout':'failed';const cause=(e as {cause?:{code?:string}})?.cause?.code;const message=(e as Error).message;
+  error=status==='failed'&&responseStatus!==null&&/^(terminated|fetch failed)$/i.test(message)
+   ?`Chat response stream closed unexpectedly after HTTP ${responseStatus} (${streamBytes} bytes, ${streamEvents} events${cause?`, ${cause}`:''}). The server or network ended the connection before the reply completed.`
+   :message;}
  const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>=0?v:null;
  const stats={input_tokens:number(usage.prompt_tokens),total_output_tokens:number(usage.completion_tokens),reasoning_output_tokens:number(usage.completion_tokens_details?.reasoning_tokens),tokens_per_second:number(timings.predicted_per_second)};
- const measured=metrics(stats,performance.now()-began,null,null,first,streamTiming.summary(number(usage.completion_tokens),status==='completed'));
+ const measured=metrics(stats,performance.now()-began,null,null,first,streamTiming.summary(number(usage.completion_tokens),status==='completed',timeline.summary()));
  measured.ttftMs=first;
+ const stream=measured.streaming,outputTokens=measured.outputTokens;
+ // This is a client-observed rate over the visible text-event span, not server decode speed.
+ // A single event has no measurable span; the first chunk may contain several tokens, and
+ // reasoning-token accounting is provider-dependent, so we require usage and multiple events.
+ measured.clientGenerationTps=clientDecodeEstimate(outputTokens,stream,status==='completed');
+ const cached=number(usage.prompt_tokens_details?.cached_tokens);
+ measured.cachedInputTokens=cached;measured.newInputTokens=measured.inputTokens!==null&&cached!==null&&cached<=measured.inputTokens?measured.inputTokens-cached:null;
+ measured.cacheAccountingMethod=cached===null?'Unavailable: endpoint did not report cached prompt tokens':'Endpoint-reported usage.prompt_tokens_details.cached_tokens';
+ measured.generationMethod=measured.generationTps!==null?'Server-reported decode speed':measured.clientGenerationTps!==null?'Client estimate: (reported completion tokens minus one) divided by visible text-event span; first-chunk token count and reasoning accounting may affect it':'Unavailable: server decode speed absent and client stream estimate unsupported';
  measured.prefillMs=number(timings.prompt_ms);
  measured.prefillTps=number(timings.prompt_per_second);
- measured.prefillMethod=measured.prefillMs===null?'Unavailable: endpoint did not report prompt processing timing':'Server-reported prompt processing timing';
+ measured.prefillMethod=measured.prefillTps!==null||measured.prefillMs!==null?'Server-reported prompt processing timing':'Unavailable: endpoint did not report prompt processing timing';
  measured.cacheNote='TTFT is client-observed first content (including reasoning). Server caching, queueing, and stream buffering may affect timings. Missing token counts and generation speed remain unavailable.';
- return {output,reasoning:thought,metrics:measured,rawStats:{usage,timings,finish_reason:finish},status,error,possibleTruncation:finish==='length'};
+ return {output,reasoning:thought,metrics:measured,rawStats:{usage,timings,finish_reason:finish,...(streamTransportWarning?{streamTransportWarning}:{})},status,error,possibleTruncation:finish==='length'};
 }

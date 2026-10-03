@@ -15,6 +15,27 @@ test('compatible discovery uses v1 and leaves unknown capabilities unknown',asyn
  assert.equal(models[0].nativeMtp?.supported,null);assert.equal(models[0].max_context_length,0);
  assert.equal(models[0].loaded_instances[0].id,'served-model');
 });
+test('compatible provider supports a custom API prefix and bearer key',async t=>{
+ const custom={...settings,provider:'openai' as const,baseUrl:'https://models.example.org/api'};
+ const calls:string[]=[];
+ t.mock.method(globalThis,'fetch',async(url:any,init:any)=>{
+  calls.push(String(url));
+  assert.equal(init.headers.Authorization,'Bearer fixture-token');
+  if(String(url).endsWith('/api/models'))return Response.json({data:[{id:'served-model'}]});
+  const body=JSON.parse(init.body);
+  assert.equal(body.model,'served-model');
+  assert.equal(body.stream,true);
+  assert.ok(!('stream_options' in body));
+  return sse([{choices:[{index:0,delta:{content:'Connected'},finish_reason:'stop'}]}]);
+ });
+ const [model]=await listModels(custom);
+ assert.equal(model.key,'served-model');
+ const result=await infer(custom,model.key,'Say connected',16,0,'default',new AbortController().signal);
+ assert.equal(result.status,'completed');
+ assert.equal(result.output,'Connected');
+ assert.deepEqual(calls,['https://models.example.org/api/models','https://models.example.org/api/chat/completions']);
+ assert.doesNotThrow(()=>validateSettings({...custom,tokenConfigured:true}));
+});
 test('compatible discovery preserves reported llama.cpp metadata and distinguishes active context',async t=>{
  t.mock.method(globalThis,'fetch',async()=>Response.json({data:[{id:'gemma-4-12b-qa',meta:{n_ctx:2048,n_ctx_train:262144,n_params:11907350576,size:4623890624,ftype:'IQ3_XXS - 3.0625 bpw'}}]}));
  const [model]=await listModels(settings);
@@ -46,14 +67,38 @@ test('compatible streamed answers preserve usage, reasoning and length finish',a
  const r=await infer(settings,'served-model','Question',8,0,'default',new AbortController().signal);
  assert.equal(r.status,'completed');assert.equal(r.output,'42');assert.equal(r.reasoning,'Think ');
  assert.equal(r.metrics.outputTokens,8);assert.equal(r.metrics.generationTps,40);assert.equal(r.metrics.prefillTps,600);assert.equal(r.possibleTruncation,true);
+ assert.ok(r.metrics.clientGenerationTps!==null,'visible reasoning and answer chunks form a client-observed span');
+ assert.match(r.metrics.generationMethod!,/Server-reported/);
 });
 test('missing usage is unavailable, and a truncated stream fails',async t=>{
  const mocked=t.mock.method(globalThis,'fetch',async()=>sse([{choices:[{delta:{content:'42'},finish_reason:'stop'}]}]));
  const r=await infer(settings,'m','q',8,0,'default',new AbortController().signal);
  assert.equal(r.status,'completed');assert.equal(r.metrics.outputTokens,null);assert.equal(r.metrics.generationTps,null);assert.equal(r.metrics.prefillTps,null);
+ assert.equal(r.metrics.clientGenerationTps,null);
  mocked.mock.mockImplementation(async()=>sse([{choices:[{delta:{content:'partial'}}]}]));
  const broken=await infer(settings,'m','q',8,0,'default',new AbortController().signal);
  assert.equal(broken.status,'failed');assert.match(broken.error!,/finish reason/);
+});
+test('compatible stream transport failure reports response progress without leaking credentials',async t=>{
+ t.mock.method(globalThis,'fetch',async()=>new Response(new ReadableStream<Uint8Array>({
+  start(controller){controller.enqueue(new TextEncoder().encode('data: {"choices":[{"index":0,"delta":{"content":"partial"}}]}\n\n'));controller.error(Object.assign(new TypeError('terminated'),{cause:{code:'UND_ERR_SOCKET'}}));}
+ }),{status:200}));
+ const result=await infer(settings,'m','q',8,0,'default',new AbortController().signal);
+ assert.equal(result.status,'failed');
+ assert.match(result.error!,/response stream closed unexpectedly after HTTP 200/);
+ assert.match(result.error!,/UND_ERR_SOCKET/);
+ assert.doesNotMatch(result.error!,/fixture-token|Bearer/);
+});
+test('compatible stream accepts a socket close after a finish reason but records the warning',async t=>{
+ let sent=false;
+ t.mock.method(globalThis,'fetch',async()=>new Response(new ReadableStream<Uint8Array>({
+  pull(controller){if(sent){controller.error(Object.assign(new TypeError('terminated'),{cause:{code:'UND_ERR_SOCKET'}}));return;}sent=true;controller.enqueue(new TextEncoder().encode('data: {"choices":[{"index":0,"delta":{"content":"complete"},"finish_reason":"stop"}]}\n\n'));}
+ },{highWaterMark:0}),{status:200}));
+ const result=await infer(settings,'m','q',256,0,'default',new AbortController().signal);
+ assert.equal(result.status,'completed');assert.equal(result.output,'complete');assert.equal(result.error,undefined);
+ assert.equal(result.rawStats.finish_reason,'stop');
+ assert.match(String(result.rawStats.streamTransportWarning),/Socket closed after the finish reason/);
+ assert.equal(result.metrics.outputTokens,null);
 });
 test('compatible authentication failures and cancellation remain distinct',async t=>{
  const mocked=t.mock.method(globalThis,'fetch',async()=>new Response('Unauthorized',{status:401}));

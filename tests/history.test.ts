@@ -6,7 +6,7 @@ import {historyRows} from '../electron/history';
 import {inferProfile} from '../src/model-profile';
 import {percentile} from '../electron/metrics';
 import type {Metrics,Run,Sample} from '../src/types';
-const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({...performanceSummary([]),contextTarget:null,loadProfile:'waves',
+const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({...performanceSummary([]),contextTarget:null,inputTargetTokens:0,requestedOutputLimitTokens:128,actualOutputTokensMean:null,loadProfile:'waves',
  vision:'off',visionEffective:'',visionImagesSent:false,visionProjectorUnloaded:false,visionLimitation:'',
  mtp:'off',mtpDraftTokens:null,mtpDepth:null,draftAcceptance:null,draftMeanLen:null,model:'Gemma 4 12B',modelKey:'gemma-4-12b-it@iq3_xxs',test:'Short prompt throughput',testId:'perf-short',concurrency:1,
  requests:1,failures:0,failureRate:0,generationTps:null,estimatedPrefillTps:null,throughput:null,
@@ -20,7 +20,7 @@ const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({...performanceSummary([])
  promptSize:'short',testKind:'performance',benchmarkPack:null,
  reasoning:'default',temperature:0,contextLength:8192,maxTokens:512,waves:1,
  completed:1,durationsMs:[],objectiveCount:0,localJudgeCount:0,externalJudgeCount:0,
- ...patch});
+ ...patch} as HistoryRow);
 const view=(patch:Partial<HistoryView>={}):HistoryView=>({...defaultHistoryView,...patch});
 test('the family comes from the reported architecture, never from the repackager',()=>{
  assert.equal(familyOf('gemma4','gemma-4-12b-it@iq3_xxs'),'Gemma');
@@ -192,4 +192,16 @@ test('context-sweep history rows retain target and load profile, including legac
  const legacy=savedRun();
  const [old]=historyRows([legacy],{});
  assert.deepEqual([old.promptSize,old.contextTarget,old.loadProfile],['short',null,'waves']);
+});
+
+
+test('no history grouping keeps same-family models and repeated run measurements separate',()=>{
+ const rows=Array.from({length:8},(_,i)=>row({modelKey:`qwen-34b-${i%4}`,model:'Qwen 34B',family:'Qwen',sizeLabel:'34B',runId:`run-${Math.floor(i/4)}`,generationTps:10+i}));
+ const view={...defaultHistoryView,groupBy:'none' as const};
+ const groups=groupHistory(rows,view);
+ assert.equal(groups.length,8);
+ assert.equal(new Set(groups.map(g=>g.key)).size,8);
+ groups.forEach((g,i)=>{assert.equal(g.rows.length,1);assert.equal(g.generationTps?.value,10+i);});
+ assert.equal(groupHistory(rows,view,{splitConcurrency:true}).length,8);
+ assert.equal(restoreHistoryView(view).groupBy,'none');
 });

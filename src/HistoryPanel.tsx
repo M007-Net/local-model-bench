@@ -72,8 +72,8 @@ export function HistoryPanel({view,onChange,onOpenRun,signature}:{view:HistoryVi
   </tbody>)}</table></div>
   {!groups.length&&<p className="hint">No saved measurement matches these choices. Press All on a row, or reset the overview.</p>}
  </section>
- {groups.length>0&&<section className="automatic-charts"><div className="section-heading"><div><h2>Automatic graphs</h2><p className="hint">One line per group across concurrency, pooled from every run in view. Hover over a point for its values.</p></div><div className="chart-controls"><label>Score source<select aria-label="Quality score source" value={score} onChange={e=>setScore(e.target.value as ScoreSource)}>{Object.entries(scoreLabels).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label></div></div>
-  <ChartGrid rows={chartData} score={score} hint="Points pool every matching run at that concurrency."/>
+ {groups.length>0&&<section className="automatic-charts"><div className="section-heading"><div><h2>Automatic graphs</h2><p className="hint">{view.groupBy==='none'?'Separate measurements from each saved run; no rows are pooled.':'One line per group across concurrency, pooled from every run in view.'} Hover over a point for its values.</p></div><div className="chart-controls"><label>Score source<select aria-label="Quality score source" value={score} onChange={e=>setScore(e.target.value as ScoreSource)}>{Object.entries(scoreLabels).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label></div></div>
+  <ChartGrid rows={chartData} connectPoints={view.groupBy!=='none'} score={score} hint={view.groupBy==='none'?'Each point is a separate saved measurement.':'Points pool every matching run at that concurrency.'}/>
  </section>}
  <p className="hint">This overview describes what your machine actually produced, not a controlled experiment. Two runs of the same model can differ because of context length, output limit, reasoning, native MTP, vision, what else was loaded, or thermals. Pin those conditions above before reading a difference as a property of the model.</p>
  </>;

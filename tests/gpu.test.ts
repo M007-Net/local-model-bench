@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {existsSync,readFileSync} from 'node:fs';
 import path from 'node:path';
 import {combineStats,downsample,statOf,statsFrom,windowStats} from '../src/gpu-stats';
+import {integrateGpuEnergy} from '../src/gpu-energy';
 import {idleSampler,type GpuSampler} from '../electron/gpu';
 import {runEngine,type Adapter,type EngineEvent} from '../electron/engine';
 import {metrics} from '../electron/metrics';
@@ -69,10 +70,60 @@ test('stored chart data keeps temperature peaks while shrinking',()=>{
 test('an unavailable sampler never blocks a run and reports why',()=>{
  const sampler=idleSampler('No sensor library.');
  assert.equal(sampler.window(0,1),null);
+ assert.equal(sampler.energy!(0,1000).status,'unavailable');
+ assert.equal(sampler.energy!(0,1000).joules,null);
+ assert.equal(sampler.energy!(0,1000).note,'No sensor library.');
  const summary=sampler.summary(0,1);
  assert.equal(summary.available,false);
  assert.equal(summary.note,'No sensor library.');
  assert.deepEqual(summary.series,[]);
+});
+
+test('GPU energy uses trapezoidal integration over raw power readings',()=>{
+ const constant=integrateGpuEnergy([
+  {t:0,power:100},{t:1000,power:100},{t:2000,power:100},
+ ],0,2000,'GPU A',1000);
+ assert.equal(constant.status,'available');
+ assert.equal(constant.joules,200);
+ assert.equal(constant.measuredJoules,200);
+ assert.equal(constant.coveredMs,2000);
+ assert.equal(constant.coverage,1);
+ assert.equal(constant.source,'selected GPU board power sensor');
+ assert.match(constant.note,/no whole-system energy/);
+
+ const ramp=integrateGpuEnergy([{t:0,power:100},{t:1000,power:200}],0,1000,'GPU A',1000);
+ assert.equal(ramp.joules,150);
+});
+
+test('energy reports missing endpoints and large sampling gaps as partial coverage',()=>{
+ const endpoints=integrateGpuEnergy([
+  {t:500,power:100},{t:1500,power:100},
+ ],0,2000,'GPU A',1000);
+ assert.equal(endpoints.status,'partial');
+ assert.equal(endpoints.joules,null);
+ assert.equal(endpoints.measuredJoules,100);
+ assert.equal(endpoints.coveredMs,1000);
+ assert.equal(endpoints.coverage,0.5);
+ assert.equal(endpoints.gaps.length,2);
+ assert.ok(endpoints.gaps.every(g=>g.reason==='missing endpoint reading'));
+
+ const largeGap=integrateGpuEnergy([
+  {t:0,power:100},{t:1000,power:100},{t:5000,power:100},{t:6000,power:100},
+ ],0,6000,'GPU A',1000);
+ assert.equal(largeGap.status,'partial');
+ assert.equal(largeGap.joules,null);
+ assert.equal(largeGap.measuredJoules,200);
+ assert.equal(largeGap.coveredMs,2000);
+ assert.ok(largeGap.gaps.some(g=>g.reason==='sampling gap too large'));
+});
+
+test('energy stays unavailable without a selected GPU or usable power endpoints',()=>{
+ assert.equal(integrateGpuEnergy([{t:0,power:100},{t:1000,power:100}],0,1000,null,1000).status,'unavailable');
+ const missing=integrateGpuEnergy([{t:0,power:null},{t:1000,power:null}],0,1000,'GPU A',1000);
+ assert.equal(missing.status,'unavailable');
+ assert.equal(missing.joules,null);
+ assert.equal(missing.measuredJoules,null);
+ assert.equal(integrateGpuEnergy([{t:0,power:100}],4,4,'GPU A',1000).status,'unavailable');
 });
 
 test('the runner records thermals per request, per wave, and for the whole run',async()=>{
