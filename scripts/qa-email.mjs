@@ -1,0 +1,42 @@
+import {_electron as electron} from 'playwright';
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {Store} from '../electron/store.ts';
+import {defaultSettings} from '../src/defaults.ts';
+import {builtInPacks,benchmarkDescriptions,benchmarkRows} from '../src/benchmarks.ts';
+const [runFile,outDir]=process.argv.slice(2);
+if(!runFile||!outDir)throw Error('Usage: node --import tsx scripts/qa-email.mjs email-run.json output-directory');
+const out=path.resolve(outDir),data=path.join(out,'data');fs.mkdirSync(data,{recursive:true});
+const run=JSON.parse(fs.readFileSync(runFile,'utf8'));
+const pack=builtInPacks.find(p=>p.id===run.config.benchmark.packId);assert.ok(pack&&pack.id.startsWith('berkeley-enron'));const name=benchmarkDescriptions[pack.id].name,metrics=benchmarkRows(run)[0].classification;
+// Real measured responses copied into an isolated QA database; no model calls.
+const store=new Store(path.join(data,'bench.sqlite'));store.set('settings',{...defaultSettings,provider:'openai',baseUrl:run.environment.endpoint});
+store.saveRun(run);for(const s of run.samples)store.saveSample(s);for(const w of run.waves)store.saveWave(w);store.close();
+const app=await electron.launch({args:[process.cwd()],env:{...process.env,LMB_DATA_DIR:data},timeout:60000});
+try{
+ const page=await app.firstWindow();page.setDefaultTimeout(20000);
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.locator('nav').getByRole('button',{name:'Benchmarks',exact:true}).click();
+ const challenge=page.locator('.benchmark-card').filter({hasText:'Berkeley email challenge'});await challenge.click();assert.equal(await page.getByLabel('Questions per model').inputValue(),'60');
+ const card=page.locator('.benchmark-card').filter({hasText:name});
+ await card.click();assert.ok((await card.innerText()).includes(`${pack.count} available questions`));
+ assert.equal(await page.locator('.benchmark-card').count(),builtInPacks.length);
+ await page.screenshot({path:path.join(out,'email-library.png'),fullPage:true});
+ if(pack.id.endsWith('challenge'))assert.equal(await page.getByLabel('Questions per model').inputValue(),'60');
+ await page.getByLabel('Questions per model').selectOption('25');
+ await page.getByLabel('Question seed').fill('17');
+ await page.getByRole('button',{name:'Use '+name,exact:true}).click();
+ await page.getByText('25 questions · seed 17',{exact:true}).waitFor();
+ await page.locator('nav').getByRole('button',{name:'Results',exact:true}).click();
+ await page.getByLabel('Saved run',{exact:true}).selectOption(run.id);
+ await page.getByRole('heading',{name:name+' scores',exact:true}).waitFor();
+ const result=page.locator('.benchmark-card').first();
+ assert.ok((await result.innerText()).includes(`Accuracy: ${metrics.accuracy.toFixed(1)}%`));
+ assert.ok((await result.innerText()).includes(`Macro-F1 (6 categories): ${metrics.macroF1.toFixed(1)}%`));
+ assert.equal(await page.locator('table').filter({hasText:'Correct / attempted'}).locator('tbody tr').count(),6);
+ await page.screenshot({path:path.join(out,'email-results.png'),fullPage:true});
+ assert.deepEqual(errors,[]);
+ fs.writeFileSync(path.join(out,'ui-validation.json'),JSON.stringify({passed:true,runId:run.id,checks:['Registry has all '+builtInPacks.length+' packs','Email pack available with '+pack.count+' real emails','Count/seed transferred','Actual practice run displays accuracy, macro-F1 and coverage','No page errors'],errors},null,2));
+ console.log('Email library and results UI passed.');
+}finally{await app.close();}

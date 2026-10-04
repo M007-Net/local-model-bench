@@ -8,6 +8,7 @@ import {mtpDepthText,rowDepth} from './mtp-sweep';
 export const unknownFacet='Unknown';
 export const unknownSize='Unknown size';
 export type HistoryRow=ChartRow&{
+ cacheK?:string;cacheV?:string;flashAttention?:string;gpu?:string;
  runId:string;runName:string;runCreated:string;runStatus:string;
  family:string;kind:ModelProfile['kind'];sizeLabel:string;sizeBucket:string;quantization:string;quantTier:string;
  publisher:string;architecture:string;totalB:number|null;activeB:number|null;
@@ -47,7 +48,18 @@ export function sizeLabel(totalB:number|null|undefined){return typeof totalB!=='
 export const shortDate=(value:string|null|undefined)=>{const t=value?Date.parse(value):NaN;return Number.isFinite(t)?new Date(t).toLocaleDateString():'—';};
 export const sizeBuckets=[{max:8,label:'Up to 8B'},{max:20,label:'8-20B'},{max:35,label:'20-35B'},{max:70,label:'35-70B'},{max:Infinity,label:'70B and above'}];
 export function sizeBucket(totalB:number|null|undefined){if(typeof totalB!=='number'||!Number.isFinite(totalB))return unknownSize;return sizeBuckets.find(b=>totalB<=b.max)?.label??unknownSize;}
-export function promptSizeOf(testId:string|undefined|null){const m=/^perf-(short|medium|long)$/.exec(String(testId??''));return m?m[1]:null;}
+export function promptSizeOf(testId:string|undefined|null){
+ const id=String(testId??'');
+ const standard=/^perf-(short|medium|long)$/.exec(id);
+ if(standard)return standard[1];
+ // Context sweeps use both the standalone `perf-context-<tokens>` form and
+ // the current `perf-short-context-<tokens>` form. Preserve the target as a
+ // distinct prompt-size condition in older history views as well.
+ const context=/^perf-context-(\d+)$/.exec(id)??/^perf-(?:short|medium|long)-context-(\d+)$/.exec(id);
+ return context?`context-${Number(context[1])}`:null;
+}
+export const contextTargetLabel=(target:number|null|undefined)=>typeof target==='number'&&Number.isFinite(target)?`${target} tokens`:'No context sweep';
+export const loadProfileLabel=(profile:string|null|undefined)=>profile==='sustained'?'Sustained concurrency':'Fixed request waves';
 export const kindLabel=(kind:string)=>kind==='moe'?'MoE':kind==='dense'?'Dense':'Unknown type';
 export const otherPrompt='Other tests';
 export const ownTests='Your own tests';
@@ -59,10 +71,13 @@ export const facetValue={
  quants:(r:HistoryRow)=>r.quantization||unknownFacet,
  concurrency:(r:HistoryRow)=>String(r.concurrency),
  promptSizes:(r:HistoryRow)=>r.promptSize??otherPrompt,
+ contextTargets:(r:HistoryRow)=>contextTargetLabel(r.contextTarget),
+ loadProfiles:(r:HistoryRow)=>loadProfileLabel(r.loadProfile),
  benchmarks:(r:HistoryRow)=>r.benchmarkPack??ownTests,
  mtp:(r:HistoryRow)=>r.mtp,
  // The depth a measurement was taken at, so a sweep step pools with an ordinary run that used
  // the same depth and never with one that used a different depth.
+ mtpPMin:(r:HistoryRow)=>r.mtp==='off'?'Not applicable':r.mtpPMin==null?'Unknown (legacy)':String(r.mtpPMin),
  mtpDepth:(r:HistoryRow)=>mtpDepthText(rowDepth(r)),
  vision:(r:HistoryRow)=>r.vision,
  reasoning:(r:HistoryRow)=>r.reasoning,
@@ -71,12 +86,13 @@ export const facetValue={
 } as const;
 export type FacetKey=keyof typeof facetValue;
 export const facetKeys=Object.keys(facetValue) as FacetKey[];
-export const facetLabels:Record<FacetKey,string>={families:'Model family',kinds:'Architecture',sizes:'Parameters',quantTiers:'Quantization tier',quants:'Exact quantization',concurrency:'Concurrent requests',promptSizes:'Prompt size',benchmarks:'Benchmark pack',mtp:'Native MTP',mtpDepth:'MTP depth',vision:'Vision',reasoning:'Reasoning',statuses:'Run status',backends:'Inference engine'};
+export const facetLabels:Record<FacetKey,string>={families:'Model family',kinds:'Architecture',sizes:'Parameters',quantTiers:'Quantization tier',quants:'Exact quantization',concurrency:'Concurrent requests',promptSizes:'Prompt size',contextTargets:'Context target',loadProfiles:'Load profile',benchmarks:'Benchmark pack',mtp:'Native MTP',mtpDepth:'MTP depth',mtpPMin:'Draft p-min',vision:'Vision',reasoning:'Reasoning',statuses:'Run status',backends:'Inference engine'};
 export const modelFacets:FacetKey[]=['families','kinds','sizes','quantTiers','quants'];
-export const conditionFacets:FacetKey[]=['backends','benchmarks','concurrency','promptSizes','mtp','mtpDepth','vision','reasoning','statuses'];
-export const groupOptions={model:'Model',family:'Model family',kind:'Dense vs MoE',size:'Parameters',sizeBucket:'Size range',quantTier:'Quantization tier',quantization:'Exact quantization',benchmark:'Benchmark pack',backend:'Inference engine'} as const;
+export const conditionFacets:FacetKey[]=['backends','benchmarks','concurrency','promptSizes','contextTargets','loadProfiles','mtp','mtpDepth','mtpPMin','vision','reasoning','statuses'];
+export const groupOptions={mtpSettings:'Model + MTP settings',none:'None (separate measurements)',model:'Model',family:'Model family',kind:'Dense vs MoE',size:'Parameters',sizeBucket:'Size range',quantTier:'Quantization tier',quantization:'Exact quantization',benchmark:'Benchmark pack',backend:'Inference engine'} as const;
 export type GroupBy=keyof typeof groupOptions;
-export const groupValue:Record<GroupBy,(r:HistoryRow)=>string>={model:r=>r.modelKey,family:r=>r.family,kind:r=>kindLabel(r.kind),size:r=>r.sizeLabel,sizeBucket:r=>r.sizeBucket,quantTier:r=>r.quantTier,quantization:r=>r.quantization||unknownFacet,benchmark:r=>r.benchmarkPack??ownTests,backend:r=>r.backend};
+export const groupValue:Record<GroupBy,(r:HistoryRow)=>string>={mtpSettings:r=>`${r.modelKey} · ${mtpDepthText(rowDepth(r))}${r.mtp==='off'?'':` · p-min ${r.mtpPMin??'unknown'}`} · ${r.test} · C${r.concurrency} · ${r.backend} · context ${r.contextLength} · output ${r.requestedOutputLimitTokens} · T${r.temperature} · reasoning ${r.reasoning}`,none:r=>r.modelKey,model:r=>r.modelKey,family:r=>r.family,kind:r=>kindLabel(r.kind),size:r=>r.sizeLabel,sizeBucket:r=>r.sizeBucket,quantTier:r=>r.quantTier,quantization:r=>r.quantization||unknownFacet,benchmark:r=>r.benchmarkPack??ownTests,backend:r=>r.backend};
+export const mtpCohort=(r:HistoryRow)=>JSON.stringify([r.modelKey,r.testId,r.concurrency,r.backendRef,r.contextLength,r.requestedOutputLimitTokens,r.temperature,r.reasoning,r.vision,r.cacheK??'unknown',r.cacheV??'unknown',r.flashAttention??'unknown',r.gpu??'unknown',r.loadProfile,r.contextTarget,r.cacheMode,r.inputTargetTokens]);
 export const sortOptions={label:'Name',runs:'Runs',requests:'Requests',generationTps:'Generation tok/s',estimatedPrefillTps:'Prefill tok/s',prefillCalibratedTps:'Prefill tok/s (calibrated)',throughput:'Total tok/s',medianMs:'Median latency',p95Ms:'p95 latency',failureRate:'Failure rate',objective:'Objective score',localJudge:'Local judge',gpuHotSpotMax:'GPU hot spot peak'} as const;
 export type SortKey=keyof typeof sortOptions;
 export type HistoryView={search:string;groupBy:GroupBy;sort:SortKey;descending:boolean}&Record<FacetKey,string[]>;
@@ -95,11 +111,14 @@ export function matchesHistory(row:HistoryRow,view:HistoryView,ignore?:FacetKey)
  const haystack=[row.modelKey,row.model,row.quantization,row.family,row.architecture,row.publisher,row.runName,row.test,row.backend].join(' ').toLocaleLowerCase();
  return terms.every(t=>haystack.includes(t));
 }
-const promptOrder=['short','medium','long',otherPrompt];
+const promptOrder=['short','medium','long'];
 function compareFacet(key:FacetKey,a:string,b:string){
  const unknownA=a===unknownFacet||a===unknownSize,unknownB=b===unknownFacet||b===unknownSize;
  if(unknownA!==unknownB)return unknownA?1:-1;
- if(key==='promptSizes')return promptOrder.indexOf(a)-promptOrder.indexOf(b);
+ if(key==='promptSizes'){
+  const ai=promptOrder.indexOf(a),bi=promptOrder.indexOf(b);
+  if(ai>=0||bi>=0)return (ai<0?promptOrder.length:ai)-(bi<0?promptOrder.length:bi);
+ }
  return a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'});
 }
 // Every value ever measured stays on offer, so a row of chips does not rearrange itself underneath you as you
@@ -133,7 +152,7 @@ export type HistoryGroup={
  medianMs:number|null;p95Ms:number|null;
  objective:number|null;localJudge:number|null;externalJudge:number|null;
  gpuHotSpotAvg:number|null;gpuHotSpotMax:number|null;
- conditions:Record<'concurrency'|'promptSizes'|'mtp'|'mtpDepth'|'vision'|'reasoning',string[]>;
+ conditions:Record<'concurrency'|'promptSizes'|'contextTargets'|'loadProfiles'|'mtp'|'mtpDepth'|'mtpPMin'|'vision'|'reasoning',string[]>;
  mixed:boolean;
 };
 const distinct=(rows:HistoryRow[],pick:(r:HistoryRow)=>string)=>[...new Set(rows.map(pick))].filter(Boolean);
@@ -147,7 +166,9 @@ function aggregate(key:string,label:string,rows:HistoryRow[]):HistoryGroup{
  const conditions={
   concurrency:distinct(rows,r=>String(r.concurrency)).sort((a,b)=>+a-+b),
   promptSizes:distinct(rows,r=>r.promptSize??otherPrompt),
-  mtp:distinct(rows,r=>r.mtp),mtpDepth:distinct(rows,r=>mtpDepthText(rowDepth(r))),vision:distinct(rows,r=>r.vision),reasoning:distinct(rows,r=>r.reasoning)};
+  contextTargets:distinct(rows,r=>contextTargetLabel(r.contextTarget)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'})),
+  loadProfiles:distinct(rows,r=>loadProfileLabel(r.loadProfile)),
+  mtp:distinct(rows,r=>r.mtp),mtpDepth:distinct(rows,r=>mtpDepthText(rowDepth(r))),mtpPMin:distinct(rows,facetValue.mtpPMin),vision:distinct(rows,r=>r.vision),reasoning:distinct(rows,r=>r.reasoning)};
  return {key,label,rows,models:distinct(rows,r=>r.modelKey).sort(),runs,first:created[0]??'',last:created[created.length-1]??'',
   requests,completed:requests-failures,failures,failureRate:requests?failures/requests:null,
   generationTps:weighted(rows,r=>r.generationTps,ok),estimatedPrefillTps:weighted(rows,r=>r.estimatedPrefillTps,ok),
@@ -166,9 +187,9 @@ function aggregate(key:string,label:string,rows:HistoryRow[]):HistoryGroup{
 }
 export function groupHistory(rows:HistoryRow[],view:HistoryView,options:{by?:GroupBy;splitConcurrency?:boolean}={}):HistoryGroup[]{
  const by=options.by??view.groupBy,map=new Map<string,{label:string;rows:HistoryRow[]}>();
- for(const row of rows){
+ for(const [index,row] of rows.entries()){
   if(!matchesHistory(row,view))continue;
-  const label=groupValue[by](row),key=options.splitConcurrency?label+' '+row.concurrency:label;
+  const label=groupValue[by](row),key=by==='mtpSettings'?JSON.stringify([mtpCohort(row),rowDepth(row),row.mtpPMin??null]):by==='none'?JSON.stringify([row.runId,row.modelKey,row.testId,row.concurrency,row.mtpDepth,index]):options.splitConcurrency?label+' '+row.concurrency:label;
   const entry=map.get(key)??{label,rows:[]};entry.rows.push(row);map.set(key,entry);
  }
  return [...map.entries()].map(([key,{label,rows}])=>aggregate(key,label,rows));
@@ -198,10 +219,22 @@ export function sortGroups(groups:HistoryGroup[],view:HistoryView){
 // The automatic graphs plot one line per model key across concurrency, so a group label takes the place of a
 // model key and the pooled numbers take the place of that model's own.
 export function chartRows(groups:HistoryGroup[]):ChartRow[]{
- return groups.filter(g=>g.rows.length).map(g=>({...g.rows[0],modelKey:g.label,model:g.label,requests:g.requests,failures:g.failures,failureRate:g.failureRate??0,
+ return groups.filter(g=>g.rows.length).map(g=>({...g.rows[0],...(g.conditions.mtpDepth.length>1?{mtpDepth:null,mtp:'Mixed'}:{}),...(g.conditions.mtpPMin.length>1?{mtpPMin:null}:{}),modelKey:g.label,model:g.label,requests:g.requests,failures:g.failures,failureRate:g.failureRate??0,
   generationTps:g.generationTps?.value??null,estimatedPrefillTps:g.estimatedPrefillTps?.value??null,throughput:g.throughput?.value??null,ttftMs:g.ttftMs?.value??null,
   medianMs:g.medianMs,p95Ms:g.p95Ms,objective:g.objective,localJudge:g.localJudge,externalJudge:g.externalJudge,
   gpuHotSpotAvg:g.gpuHotSpotAvg,gpuHotSpotMax:g.gpuHotSpotMax}));
+}
+export function bestMtpGroups(groups:HistoryGroup[]):Set<string>{
+ const best=new Map<string,HistoryGroup>();
+ const baselines=new Map(groups.filter(g=>g.rows.length&&g.rows[0].mtp==='off').map(g=>[mtpCohort(g.rows[0]),g]));
+ for(const g of groups){
+  if(!g.rows.length||g.requests<2||g.failures||g.generationTps===null||g.rows.some(r=>r.runStatus!=='completed'))continue;
+  const cohort=mtpCohort(g.rows[0]),prior=best.get(cohort);
+  const baseline=baselines.get(cohort);
+  if(baseline?.objective!=null&&(g.objective===null||g.objective<baseline.objective-1))continue;
+  if(!prior||g.generationTps.value>prior.generationTps!.value)best.set(cohort,g);
+ }
+ return new Set([...best.values()].map(g=>g.key));
 }
 export function restoreHistoryView(value:unknown):HistoryView{
  if(!value||typeof value!=='object')return {...defaultHistoryView,...emptyFacets()};

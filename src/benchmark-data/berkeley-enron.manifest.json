@@ -1,0 +1,23 @@
+{
+  "dataset": "UC Berkeley Enron",
+  "sourceUrl": "https://bailando.berkeley.edu/enron/enron_with_categories.tar.gz",
+  "archiveSha256": "08625500ab4c032f99acfc1f8eed125b2cd5e9c4280c7ce2d7ce0bd28a190625",
+  "originalCount": 1702,
+  "exclusions": {
+    "no_two_annotator_agreement": 464,
+    "multiple_or_missing_genres": 207,
+    "over_16000_characters": 59,
+    "empty_message_genre": 22
+  },
+  "categoryCounts": {
+    "1": 463,
+    "2": 23,
+    "3": 53,
+    "4": 262,
+    "5": 48,
+    "6": 101
+  },
+  "protocol": "berkeley-enron-genre-v1; zero-shot; single nonempty genre with >=2 annotation votes; full email <=16000 Unicode characters; strict JSON genre_id; accuracy and macro-F1 over all 6 genres; invalid responses and request failures count as misses; seeded sample",
+  "datasetHash": "ca9a91d9e605ddbd8b77af341d0a0655df90cf918d762c9d8a322fc5fe9cc9b3",
+  "preparedCount": 950
+}

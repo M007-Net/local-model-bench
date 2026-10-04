@@ -1,11 +1,31 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {calibratePrefill,calibrationFor,calibrationKey,calibrationPrompt,calibrationRepeats,minDeltaMs,minTokenRatio,prefillText} from '../src/prefill';
+import {calibratePrefill,calibratePrefillRepeated,calibrationFor,calibrationKey,calibrationPrompt,calibrationRepeats,minDeltaMs,minTokenRatio,prefillText} from '../src/prefill';
 import {parseRuntimes,runtimeChoices,runtimeLabel} from '../electron/runtime';
 import type {Run} from '../src/types';
 import {cacheScale,cacheScalePair,cacheQuantText,flashOn,needsFlashAttention} from '../src/cache-quant';
 import {validateConfig} from '../electron/validation';
 import {defaultConfig} from '../src/defaults';
+
+test('repeated calibration rejects invalid pairs without hiding their evidence',()=>{
+ const short=[{tokens:100,ms:200},{tokens:100,ms:200},{tokens:1000,ms:10}];
+ const long=[{tokens:1000,ms:1100},{tokens:1000,ms:1100},{tokens:1001,ms:110}];
+ const result=calibratePrefillRepeated(short,long);
+ assert.equal(result.validPairCount,2);assert.equal(result.pairs?.length,3);
+ assert.equal(result.pairs?.[2].rate,null);assert.equal(result.marginalTps,1000);
+ assert.equal(result.overheadMs,100);assert.equal(result.fitR2,1);
+ const invalid=calibratePrefillRepeated([short[0],short[2]],[long[0],long[2]]);
+ assert.equal(invalid.marginalTps,null);assert.equal(invalid.sampleSdTps,null);
+ assert.equal(calibratePrefill({tokens:Infinity,ms:1},{tokens:Infinity,ms:2}).marginalTps,null);
+});
+
+test('repeated calibration rate and overhead describe the same fitted line',()=>{
+ const result=calibratePrefillRepeated([{tokens:100,ms:400},{tokens:100,ms:400}],[{tokens:1000,ms:1000},{tokens:1000,ms:1600}]);
+ assert.equal(result.marginalTps,1000);
+ assert.equal(result.overheadMs,300);
+ assert.ok(result.sampleSdTps!>0);assert.ok(result.fitR2!<1);
+ assert.match(result.method!,/least-squares/);
+});
 
 // The case the calibration exists for: a fixed per-request cost that a single measurement charges
 // to the GPU. 150 ms of overhead plus a true 1500 tok/s means a 150-token prompt is timed at
@@ -36,6 +56,11 @@ test('a rate is reported only when two points can support one',()=>{
  assert.equal(calibratePrefill({tokens:0,ms:0},ok).marginalTps,null);
  for(const c of [tooClose,tooFast])assert.equal(prefillText(c),c.note);
  assert.equal(prefillText(null),'Not measured');
+});
+test('repeated calibration reports paired sample spread, valid count and fit quality',()=>{
+ const truth=1500,overhead=150,short=[100,105,98].map((tokens,i)=>({tokens,ms:overhead+tokens/truth*1000+i*2})),long=[3000,3100,2950].map((tokens,i)=>({tokens,ms:overhead+tokens/truth*1000+i*4}));
+ const c=calibratePrefillRepeated(short,long);assert.equal(c.repetitions,3);assert.equal(c.validPairCount,3);assert.ok(Math.abs(c.marginalTps!-truth)<5);assert.ok(c.sampleSdTps!>0);assert.ok(c.cv!>0);assert.ok(c.fitR2!>0.99);assert.equal(c.pairs?.length,3);assert.match(c.method!,/client estimate/);
+ const bad=calibratePrefillRepeated(short,[{tokens:3000,ms:160},{tokens:3100,ms:170},{tokens:2950,ms:180}]);assert.equal(bad.validPairCount,0);assert.equal(bad.marginalTps,null);
 });
 
 // A long prompt cheaper per token than the line implies (a batch boundary, or partial cache reuse)

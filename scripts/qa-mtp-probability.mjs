@@ -1,0 +1,64 @@
+// Isolated desktop fixture: verifies controls and reporting, never runs a model benchmark.
+import {_electron as electron} from 'playwright';
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {Store} from '../electron/store.ts';
+import {defaultConfig,defaultSettings,starterTests} from '../src/defaults.ts';
+import {metrics,waveMetrics} from '../electron/metrics.ts';
+const root=process.cwd(),out=path.join(root,'work','mtp-probability-qa',String(Date.now())),data=path.join(out,'data');
+fs.mkdirSync(data,{recursive:true});
+const test=starterTests.find(t=>t.id==='reasoning'),now=new Date().toISOString();
+const run={id:'probability-ui-fixture',created:now,updated:now,status:'completed',config:{...defaultConfig,name:'Draft threshold UI fixture',modelKeys:['fixture'],testIds:[test.id],concurrency:[1],waves:2,mtp:'on',mtpSweep:[0,2],mtpPMinSweep:[0,.8],mtpDraftPMin:0},tests:[test],modelInfo:{},environment:{fixture:true},logs:[],samples:[],waves:[]};
+for(const [depth,pMin,rate] of [[0,undefined,30],[2,0,35],[2,.8,40]])for(let i=0;i<2;i++){
+ const id=`${depth}/${pMin}/${i}`;
+ const sample={id,runId:run.id,modelKey:'fixture',modelName:'Fixture',testId:test.id,testName:test.name,concurrency:1,waveId:id,wave:i,slot:0,warmup:false,prompt:test.prompt,output:'84',reasoning:'',status:'completed',metrics:metrics({input_tokens:10,total_output_tokens:20,tokens_per_second:rate+i/10},1000,0,20,20),objective:{score:100,checks:[]},grades:[],rawStats:{},created:now,possibleTruncation:false,mtpTokens:depth,...(pMin===undefined?{}:{mtpPMin:pMin})};
+ run.samples.push(sample);run.waves.push(waveMetrics(id,run.id,'fixture',test.id,1,1000,[sample]));
+}
+const store=new Store(path.join(data,'bench.sqlite'));store.set('settings',defaultSettings);store.saveRun(run);for(const s of run.samples)store.saveSample(s);for(const w of run.waves)store.saveWave(w);
+const repeat=structuredClone(run);repeat.id='probability-repeat';repeat.config.name='Repeated MTP settings';repeat.samples=repeat.samples.map(s=>({...s,id:'repeat-'+s.id,runId:repeat.id,waveId:'repeat-'+s.waveId}));repeat.waves=repeat.waves.map(w=>({...w,id:'repeat-'+w.id,runId:repeat.id}));store.saveRun(repeat);for(const s of repeat.samples)store.saveSample(s);for(const w of repeat.waves)store.saveWave(w);store.close();
+const app=await electron.launch({...(process.env.LMB_QA_EXE?{executablePath:process.env.LMB_QA_EXE}:{}),args:process.env.LMB_QA_EXE?[]:[root],env:{...process.env,LMB_DATA_DIR:data},timeout:60000});
+try{
+ const page=await app.firstWindow();page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.locator('nav').getByRole('button',{name:'Run',exact:true}).click();
+ await page.locator('details.engine-options').evaluate(e=>e.open=true);
+ await page.getByLabel('Enable native MTP').check();
+ assert.equal(await page.getByLabel('Minimum draft probability',{exact:true}).inputValue(),'0');
+ await page.getByLabel('Sweep MTP prediction depths').check();await page.getByRole('checkbox',{name:'Sweep minimum draft probability',exact:true}).check();
+ const depths=page.getByLabel('MTP depths to sweep'),ps=page.getByLabel('Draft probabilities to sweep');
+ assert.equal(await ps.inputValue(),'0, 0.5, 0.7, 0.8, 0.9');
+ await depths.fill('0, 2, 4');await depths.blur();await ps.fill('0.8, 0, 0.8');await ps.blur();
+ assert.equal(await ps.inputValue(),'0, 0.8');await page.getByText('5 MTP configurations',{exact:false}).waitFor();
+ assert.match(await page.locator('.run-summary').innerText(),/2 tokens · p-min 0.8/);
+ assert.equal(await page.getByText('Sampling and MTP tuning',{exact:true}).count(),0);
+ await ps.fill('0.8, -1, 2');assert.equal(await ps.getAttribute('aria-invalid'),'true');await ps.blur();assert.equal(await ps.inputValue(),'0.8');
+ await ps.fill('');await ps.blur();assert.equal(await page.getByRole('button',{name:'Start benchmark'}).isDisabled(),true);
+ await ps.fill('0, 0.8');await ps.blur();await page.screenshot({path:path.join(out,'controls.png'),fullPage:true});
+ await page.getByRole('checkbox',{name:'Auto find MTP settings',exact:true}).check();
+ assert.equal(await page.getByRole('checkbox',{name:'Sweep minimum draft probability',exact:true}).count(),0);
+ assert.equal(await page.getByLabel('MTP refinement rounds').inputValue(),'2');
+ await page.getByText('7 initial MTP configurations',{exact:false}).waitFor();
+ assert.match(await page.locator('.run-summary').innerText(),/Request total grows/);
+ await page.getByLabel('MTP refinement rounds').fill('3');assert.match(await page.locator('.run-summary').innerText(),/3 refinement rounds/);
+ await page.screenshot({path:path.join(out,'auto-find.png'),fullPage:true});
+ await page.getByLabel('Enable native MTP').uncheck();await page.getByLabel('Enable native MTP').check();
+ assert.equal(await page.getByRole('checkbox',{name:'Auto find MTP settings',exact:true}).isChecked(),false);
+ assert.equal(await page.getByRole('checkbox',{name:'Sweep minimum draft probability',exact:true}).isChecked(),false);
+ await page.locator('nav').getByRole('button',{name:'Results',exact:true}).click();
+ const panel=page.locator('section.panel').filter({has:page.getByRole('heading',{name:'MTP prediction and probability sweep',exact:true})});
+ await panel.waitFor();assert.equal(await panel.locator('tbody tr').count(),3);assert.match(await panel.innerText(),/0.8/);
+ assert.equal(await panel.getByText('Fastest',{exact:true}).count(),1);
+ const table=page.locator('section.panel').filter({has:page.getByRole('heading',{name:'Model comparison',exact:true})});assert.equal(await table.locator('tbody tr').count(),3);
+ await panel.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'results.png'),fullPage:true});
+ await page.getByRole('button',{name:'All runs overview',exact:true}).click();
+ await page.getByRole('button',{name:'Compare MTP settings',exact:true}).click();
+ assert.equal(await page.getByLabel('Group by',{exact:true}).inputValue(),'mtpSettings');
+ assert.equal(await page.locator('.history-table tbody').count(),3,'two repeat runs pool into three setting rows');
+ assert.ok(await page.locator('[data-best-measured="true"]').count()>0);
+ await page.getByLabel('History MTP horizontal axis').selectOption('mtpPMin');
+ assert.ok(await page.getByText('Minimum draft probability',{exact:true}).count()>0);
+ await page.locator('.automatic-charts').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'history-settings.png'),fullPage:true});
+ await page.reload();await page.locator('nav').getByRole('button',{name:'Results',exact:true}).click();await page.getByRole('button',{name:'All runs overview',exact:true}).click();
+ assert.equal(await page.getByLabel('Group by',{exact:true}).inputValue(),'mtpSettings','setting comparison survives reload');
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,evidence:out,errors}));
+}finally{await app.evaluate(({app})=>app.exit(0)).catch(()=>{});}

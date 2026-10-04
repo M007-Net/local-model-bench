@@ -1,7 +1,7 @@
 {
   "name": "local-model-bench",
-  "version": "1.16.0",
-  "description": "Private desktop benchmarks and transparent grading for LM Studio models",
+  "version": "1.19.7",
+  "description": "Desktop benchmarks and transparent grading for LM Studio, llama.cpp, and compatible endpoints",
   "author": "Local Model Bench contributors",
   "license": "MIT",
   "repository": {
@@ -13,6 +13,16 @@
     "url": "https://github.com/M007-Net/local-model-bench/issues"
   },
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "lucide-react": "^0.468.0"
+  },
   "keywords": [
     "lm-studio",
     "benchmark",
@@ -21,11 +31,6 @@
     "windows",
     "local-ai"
   ],
-  "engines": {
-    "node": ">=22"
-  },
-  "type": "module",
-  "main": "dist-electron/main.cjs",
   "scripts": {
     "build": "tsc --noEmit && vite build && node scripts/build.mjs && node scripts/licenses.mjs",
     "test": "tsx --test tests/*.test.ts",
@@ -36,12 +41,13 @@
     "qa": "node scripts/qa.mjs",
     "qa:agents": "node scripts/qa-agents.mjs",
     "qa:agents:packaged": "node scripts/qa-agents-packaged.mjs",
-    "agents:calibrate": "tsx scripts/agent-calibrate.ts"
-  },
-  "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "lucide-react": "^0.468.0"
+    "agents:calibrate": "tsx scripts/agent-calibrate.ts",
+    "qa:endpoints": "node scripts/qa-endpoints.mjs",
+    "qa:endpoint-matrix": "node scripts/qa-endpoint-matrix.mjs",
+    "qa:live-endpoints": "node scripts/qa-live-endpoints.mjs",
+    "qa:load-profiles": "node scripts/qa-load-profiles.mjs",
+    "benchmark:email": "tsx scripts/email-benchmark.ts",
+    "benchmark:email:prepare": "python scripts/load-email-dataset.py --download && tsx scripts/prepare-email-benchmark.ts && tsx scripts/prepare-email-challenge.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -89,7 +95,8 @@
         "from": "vendor",
         "to": "vendor",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/*.sys"
         ]
       }
     ]

@@ -1,8 +1,8 @@
 import {useEffect,useMemo,useState} from 'react';
 import {RefreshCw,ArrowRight,ChevronRight} from 'lucide-react';
-import {chartRows,conditionFacets,defaultHistoryView,facetKeys,facetLabels,facetOptions,groupHistory,groupOptions,modelFacets,shortDate,sortGroups,type FacetKey,type HistoryGroup,type HistoryRow,type HistoryView,type SortKey,type Spread,matchesHistory} from './history';
+import {chartRows,bestMtpGroups,mtpCohort,conditionFacets,defaultHistoryView,facetKeys,facetLabels,facetOptions,groupHistory,groupOptions,modelFacets,shortDate,sortGroups,type FacetKey,type HistoryGroup,type HistoryRow,type HistoryView,type SortKey,type Spread,matchesHistory} from './history';
 import {ChartGrid} from './ChartsPanel';
-import {scoreLabels,type ScoreSource} from './charts';
+import {scoreLabels,type ScoreSource,type XAxis} from './charts';
 const api=window.bench;
 const number=(n:number|null|undefined,d=1)=>n===null||n===undefined||!Number.isFinite(n)?'—':n.toLocaleString(undefined,{maximumFractionDigits:d});
 // A pooled rate is reported with the spread it was pooled from, so a single figure never hides the fact that
@@ -22,10 +22,11 @@ const columns:{key:SortKey;label:string}[]=[
  {key:'generationTps',label:'Gen tok/s'},{key:'estimatedPrefillTps',label:'Prefill est.'},{key:'throughput',label:'Total tok/s'},
  {key:'medianMs',label:'Median / p95'},{key:'failureRate',label:'Failures'},
  {key:'objective',label:'Objective'},{key:'localJudge',label:'Local judge'},{key:'gpuHotSpotMax',label:'GPU hot spot'}];
-const conditionText=(g:HistoryGroup)=>[`concurrency ${g.conditions.concurrency.join(', ')||'—'}`,g.conditions.promptSizes.join(', '),`MTP ${g.conditions.mtpDepth.join(' / ')||'—'}`,`reasoning ${g.conditions.reasoning.join(' / ')||'—'}`].filter(Boolean).join(' · ');
+const conditionText=(g:HistoryGroup)=>[`concurrency ${g.conditions.concurrency.join(', ')||'—'}`,g.conditions.promptSizes.join(', '),`MTP ${g.conditions.mtpDepth.join(' / ')||'—'}`,`p-min ${g.conditions.mtpPMin.join(' / ')||'unknown'}`,`reasoning ${g.conditions.reasoning.join(' / ')||'—'}`].filter(Boolean).join(' · ');
 export function HistoryPanel({view,onChange,onOpenRun,signature}:{view:HistoryView;onChange:(v:HistoryView)=>void;onOpenRun:(id:string)=>void;signature:string}){
  const [rows,setRows]=useState<HistoryRow[]|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
  const [score,setScore]=useState<ScoreSource>('objective'),[open,setOpen]=useState('');
+ const [mtpAxis,setMtpAxis]=useState<XAxis>('mtpDepth');
  const [reloads,setReloads]=useState(0);
  const load=()=>setReloads(n=>n+1);
  // history() re-reads every saved run, so it gets slower as the database grows and two
@@ -38,7 +39,8 @@ export function HistoryPanel({view,onChange,onOpenRun,signature}:{view:HistoryVi
  // Grouping and the eleven chip rows each walk every measurement, and a chip row walks it once per facet. They
  // depend only on the rows and the current view, so typing in the search box does not redo all of it per key.
  const groups=useMemo(()=>sortGroups(groupHistory(rows??[],view),view),[rows,view]);
- const chartData=useMemo(()=>chartRows(groupHistory(rows??[],view,{splitConcurrency:true})),[rows,view]);
+ const best=useMemo(()=>view.groupBy==='mtpSettings'?bestMtpGroups(groups):new Set<string>(),[groups,view.groupBy]);
+ const chartData=useMemo(()=>{const gs=groupHistory(rows??[],view,{splitConcurrency:true});return chartRows(gs).map((r,i)=>({...r,...(view.groupBy==='mtpSettings'?{seriesId:mtpCohort(gs[i].rows[0]),modelKey:r.modelKey.replace(/ · MTP (?:off|[0-9]+ tokens?|legacy\/default)(?: · p-min [^·]+)?/,'')}:{ }),bestObserved:best.has(gs[i].key),runLabel:gs[i].runs.length+' saved run(s)'}));},[rows,view,best]);
  const options=useMemo(()=>Object.fromEntries(facetKeys.map(key=>[key,facetOptions(rows??[],view,key)])) as Record<FacetKey,{value:string;count:number}[]>,[rows,view]);
  const visible=useMemo(()=>(rows??[]).filter(r=>matchesHistory(r,view)),[rows,view]);
  if(error)return <div role="alert" className="banner error">{error}</div>;
@@ -50,7 +52,7 @@ export function HistoryPanel({view,onChange,onOpenRun,signature}:{view:HistoryVi
  const sortBy=(key:SortKey)=>onChange({...view,sort:key,descending:view.sort===key?!view.descending:key!=='label'});
  const setFacet=(key:FacetKey,values:string[])=>onChange({...view,[key]:values});
  return <>
- <section className="panel history-facets"><div className="section-heading"><div><h2>What to include</h2><p className="hint">Every saved run, pooled. Press a value to narrow; press All to widen again. Choices inside one row are alternatives, choices across rows all have to match.</p></div><div className="button-row"><button onClick={load} disabled={loading}><RefreshCw size={14}/>{loading?'Reading…':'Refresh history'}</button><button onClick={()=>onChange({...defaultHistoryView})}>Reset overview</button></div></div>
+ <section className="panel history-facets"><div className="section-heading"><div><h2>What to include</h2><p className="hint">Every saved run, pooled. Press a value to narrow; press All to widen again. Choices inside one row are alternatives, choices across rows all have to match.</p></div><div className="button-row"><button onClick={()=>onChange({...view,groupBy:'mtpSettings',sort:'generationTps',descending:true})}>Compare MTP settings</button><button onClick={load} disabled={loading}><RefreshCw size={14}/>{loading?'Reading…':'Refresh history'}</button><button onClick={()=>onChange({...defaultHistoryView})}>Reset overview</button></div></div>
   {modelFacets.map(key=><Chips key={key} label={facetLabels[key]} options={options[key]} selected={view[key]} onChange={v=>setFacet(key,v)}/>)}
   <label className="field history-search"><span>Find a model or run</span><input type="search" aria-label="Search history" placeholder="Model name, quantization, run name…" value={view.search} onChange={e=>onChange({...view,search:e.target.value})}/></label>
  </section>
@@ -59,10 +61,10 @@ export function HistoryPanel({view,onChange,onOpenRun,signature}:{view:HistoryVi
  </section>
  <div className="stats-row four"><Stat label="Models covered" value={modelCount.toString()} sub="Distinct model entries in view"/><Stat label="Runs covered" value={runCount.toString()} sub="Saved runs contributing measurements"/><Stat label="Measured requests" value={number(requests,0)} sub="Warm-ups excluded"/><Stat label="Measured between" value={dates.length?shortDate(dates[0]):'—'} sub={dates.length?'through '+shortDate(dates[dates.length-1]):'No measurements in view'}/></div>
  <section className="panel"><div className="section-heading"><div><h2>Pooled measurements</h2><p className="hint">Rates are averaged across runs weighted by how many requests stood behind each one; median and p95 are recomputed from the pooled request durations. Scores count only responses that were actually scored.</p></div><label className="field history-group"><span>Group by</span><select aria-label="Group by" value={view.groupBy} onChange={e=>onChange({...view,groupBy:e.target.value as HistoryView['groupBy']})}>{Object.entries(groupOptions).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label></div>
-  {mixed>0&&<p className="hint amber">{mixed} of {groups.length} rows pool more than one condition, so they describe a range of settings rather than a controlled comparison. The Conditions column says which, and the chips above can hold one constant.</p>}
+  {view.groupBy==='mtpSettings'&&<p className="hint">Same-setting repeats are pooled across saved runs. Different workloads, context, output limit, runtime, temperature, reasoning and cache settings remain separate. Best measured generation means are descriptive; check repeat spread and quality before adopting them.</p>}{mixed>0&&<p className="hint amber">{mixed} of {groups.length} rows pool more than one condition, so they describe a range of settings rather than a controlled comparison. The Conditions column says which, and the chips above can hold one constant.</p>}
   <div className="table-scroll"><table className="history-table"><thead><tr>{columns.map(c=><th key={c.key} aria-sort={view.sort===c.key?(view.descending?'descending':'ascending'):'none'}><button type="button" className="th-sort" onClick={()=>sortBy(c.key)}>{c.label}{view.sort===c.key&&<span aria-hidden="true">{view.descending?' ▾':' ▴'}</span>}</button></th>)}<th>Conditions</th></tr></thead>
   {groups.map(g=><tbody key={g.key}><tr className={g.mixed?'mixed':''}>
-   <td><b>{g.label}</b>{g.models.length>1&&<small>{g.models.length} models</small>}<small>{shortDate(g.first)} – {shortDate(g.last)}</small></td>
+   <td><b>{g.label}</b>{best.has(g.key)&&<small className="hint">★ Best measured generation mean</small>}{g.models.length>1&&<small>{g.models.length} models</small>}<small>{shortDate(g.first)} – {shortDate(g.last)}</small></td>
    <td><button type="button" className="text-button" aria-expanded={open===g.key} aria-label={g.runs.length+' runs behind '+g.label} onClick={()=>setOpen(open===g.key?'':g.key)}>{g.runs.length}<ChevronRight size={12}/></button></td>
    <td>{number(g.requests,0)}</td><td>{spread(g.generationTps)}</td><td>{spread(g.estimatedPrefillTps)}</td><td>{spread(g.throughput)}</td>
    <td>{seconds(g.medianMs)} / {seconds(g.p95Ms)} s</td><td>{g.failures}/{g.requests}</td>
@@ -72,8 +74,8 @@ export function HistoryPanel({view,onChange,onOpenRun,signature}:{view:HistoryVi
   </tbody>)}</table></div>
   {!groups.length&&<p className="hint">No saved measurement matches these choices. Press All on a row, or reset the overview.</p>}
  </section>
- {groups.length>0&&<section className="automatic-charts"><div className="section-heading"><div><h2>Automatic graphs</h2><p className="hint">One line per group across concurrency, pooled from every run in view. Hover over a point for its values.</p></div><div className="chart-controls"><label>Score source<select aria-label="Quality score source" value={score} onChange={e=>setScore(e.target.value as ScoreSource)}>{Object.entries(scoreLabels).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label></div></div>
-  <ChartGrid rows={chartData} score={score} hint="Points pool every matching run at that concurrency."/>
+ {groups.length>0&&<section className="automatic-charts"><div className="section-heading"><div><h2>Automatic graphs</h2><p className="hint">{view.groupBy==='mtpSettings'?'Depth and draft probability kept separate across runs. Gold outlines mark the highest measured mean within matching workload and load settings.':view.groupBy==='none'?'Separate measurements from each saved run; no rows are pooled.':'One line per group across concurrency, pooled from every run in view.'} Hover over a point for its values.</p></div><div className="chart-controls"><>{view.groupBy==='mtpSettings'&&<label>Read across<select aria-label="History MTP horizontal axis" value={mtpAxis} onChange={e=>setMtpAxis(e.target.value as XAxis)}><option value="mtpDepth">Maximum predictions</option><option value="mtpPMin">Draft probability</option><option value="concurrency">Concurrent requests</option></select></label>}<label>Score source<select aria-label="Quality score source" value={score} onChange={e=>setScore(e.target.value as ScoreSource)}>{Object.entries(scoreLabels).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label></></div></div>
+  <ChartGrid xAxis={view.groupBy==='mtpSettings'?mtpAxis:'concurrency'} rows={chartData} connectPoints={view.groupBy!=='none'} score={score} hint={view.groupBy==='none'?'Each point is a separate saved measurement.':'Points pool every matching run at that concurrency.'}/>
  </section>}
  <p className="hint">This overview describes what your machine actually produced, not a controlled experiment. Two runs of the same model can differ because of context length, output limit, reasoning, native MTP, vision, what else was loaded, or thermals. Pin those conditions above before reading a difference as a property of the model.</p>
  </>;

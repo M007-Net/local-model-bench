@@ -1,9 +1,10 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Play,Square,Download,Trash2,ChevronRight,Cpu,Gauge,Upload} from 'lucide-react';
 import type {Model} from './types';
-import {TYPICAL_TURN_MS,WORKLOAD_VERSION,agenticPresets,agenticWorkerChoices,axisMax,comparableWorkload,cpuReading,defaultAgenticConfig,estimateSweepMs,humanDuration,measuredTurnCost,modelCallLabel,peakPoint,presetName,stageColors,stageDescriptions,stageLabels,sweepColumns,sweepStats,sweepVerdict,validateAgenticConfig,type AgenticConfig,type AgenticProgress,type AgenticRun,type AgenticStage,type AgenticSummary} from './agentic';
+import {TYPICAL_TURN_MS,WORKLOAD_VERSION,agenticPresets,cacheText,agenticWorkerChoices,axisMax,comparableWorkload,cpuReading,defaultAgenticConfig,estimateSweepMs,humanDuration,measuredTurnCost,modelCallLabel,peakPoint,presetName,stageColors,stageDescriptions,stageLabels,sweepColumns,sweepStats,sweepVerdict,validateAgenticConfig,type AgenticConfig,type AgenticProgress,type AgenticRun,type AgenticStage,type AgenticSummary} from './agentic';
 import {scalingMetrics,scalingSvg,stageBreakdown,stageLegendHtml,timelineSvg,type ScalingMetric,type ScalingSeries} from './agentic-charts';
 import {reasoningOptions} from './model-capabilities';
+import {cacheQuantLabel,cacheQuants,cacheScalePair,needsFlashAttention} from './cache-quant';
 
 const api=()=>window.bench;
 const n=(v:number|null|undefined,d=1)=>v===null||v===undefined||!Number.isFinite(v)?'—':v.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
@@ -17,8 +18,8 @@ function Pills<T extends string|number>({label,options,value,onChange,format}:{l
  return <div className="pill-group"><span className="pill-label">{label}</span><div className="pills" role="group" aria-label={label}>{options.map(option=><button key={String(option)} type="button" className={option===value?'pill chosen':'pill'} aria-pressed={option===value} onClick={()=>onChange(option)}>{format?format(option):String(option)}</button>)}</div></div>;
 }
 
-export function AgenticPanel({models,runs,progress,busy,host,onStart,onCancel,onDelete,onExport,onImport,onError}:{
- models:Model[];runs:AgenticSummary[];progress:AgenticProgress|null;busy:boolean;host:{cpu:string;threads:number};
+export function AgenticPanel({managed=true,models,runs,progress,busy,host,onStart,onCancel,onDelete,onExport,onImport,onError}:{
+ managed?:boolean;models:Model[];runs:AgenticSummary[];progress:AgenticProgress|null;busy:boolean;host:{cpu:string;threads:number};
  onStart:(c:AgenticConfig)=>Promise<void>;onCancel:()=>void;onDelete:(id:string)=>Promise<void>;onExport:(id:string,format:string)=>Promise<void>;onImport:()=>Promise<string|null>;onError:(message:string)=>void;
 }){
  // Only the user's raw picks are state. Which sweep, worker count and turn are actually shown is
@@ -137,6 +138,11 @@ export function AgenticPanel({models,runs,progress,busy,host,onStart,onCancel,on
   ['Host pool',environment.hostThreads?`${environment.hostThreads} thread${environment.hostThreads===1?'':'s'}`:'—'],
   ['RAM',typeof environment.totalMemory==='number'?`${(environment.totalMemory/1e9).toFixed(1)} GB`:'—'],
   ['Model call',run?modelCallLabel(run.config):'—'],
+  ...(run?.model?[
+   ['Quantization',run.model.quantization??'not reported'] as [string,string],
+   ['Model size',run.model.sizeBytes?`${(run.model.sizeBytes/1e9).toFixed(1)} GB`:'not reported'] as [string,string],
+   ['KV cache',run.config.instance==='loaded'?'set by the loaded instance':cacheText(run.config)] as [string,string]
+  ]:[]),
   ['Workload',run?`v${run.environment.workloadVersion??'unknown'} · scale ${run.config.hostWorkScale} · ${run.config.turns}×${run.config.repeats}`:'—']
  ];
  const imported=run?.environment.importedFrom;
@@ -166,12 +172,12 @@ export function AgenticPanel({models,runs,progress,busy,host,onStart,onCancel,on
    <p className="hint">Warm-up passes and the idle gaps between repeats are excluded from every result. Completed worker counts are saved as they finish, so cancelling keeps what has already been measured.</p>
   </div>}
 
-  {showForm&&<SweepForm models={models} host={host} turnCost={turnCost} busy={busy||!!progress} onStart={async config=>{await onStart(config);setShowForm(false);}} onError={onError}/>}
+  {showForm&&<SweepForm managed={managed} models={models} host={host} turnCost={turnCost} busy={busy||!!progress} onStart={async config=>{await onStart(config);setShowForm(false);}} onError={onError}/>}
 
   {!runs.length&&!progress&&!showForm&&<section className="panel first-run">
    <div className="section-heading"><div><div className="eyebrow">START HERE</div><h2>Measure what this machine does for an agent</h2></div><Gauge size={28}/></div>
    <ol className="steps">
-    <li><b>Run a host-only sweep.</b> Leave the model call off. Nothing is loaded and LM Studio is not contacted — you get this machine’s own ceiling for agent work in about a minute.</li>
+    <li><b>Run a host-only sweep.</b> Leave the model call off. Nothing is loaded and the inference server is not contacted — you get this machine’s own ceiling for agent work in about a minute.</li>
     <li><b>Read the two numbers.</b> How long one worker takes per turn is per-core speed; the peak turns per minute is what the whole chip can do.</li>
     <li><b>Compare.</b> Run the same sweep on another PC, export it as JSON, and <b>Import</b> it here to draw both curves together. Or turn the model call on to see where the GPU becomes the limit.</li>
    </ol>
@@ -213,6 +219,26 @@ export function AgenticPanel({models,runs,progress,busy,host,onStart,onCancel,on
    <div className="agent-tiles">
     {sweepTiles.map(t=><Tile key={t.label} label={t.label} value={t.value} unit={t.unit} accent={t.accent} help={t.help}/>)}
    </div>
+
+   {run?.model&&<section className="panel model-panel">
+    <div className="section-heading"><div><div className="eyebrow">MODEL UNDER TEST</div><h2>{run.model.displayName}</h2></div><span className="badge">{run.model.source==='loaded'?'Already served by the endpoint':'Loaded for this sweep'}</span></div>
+    <div className="model-facts">
+     {([
+      ['Quantization',run.model.quantization],
+      ['Parameters',run.model.params],
+      ['Architecture',run.model.architecture],
+      ['Format',run.model.format],
+      ['File size',run.model.sizeBytes?`${(run.model.sizeBytes/1e9).toFixed(2)} GB`:null],
+      ['Model context limit',run.model.maxContext?run.model.maxContext.toLocaleString()+' tokens':null],
+      ['Vision',run.model.vision===null?null:run.model.vision?'Supported':'Text only'],
+      ['KV cache',run.model.source==='loaded'?'set by the loaded instance':cacheText(run.config)],
+      ['Instance',run.model.instanceId],
+      ['Loaded context',typeof run.model.instanceConfig?.context_length==='number'?`${(run.model.instanceConfig.context_length as number).toLocaleString()} tokens`:null],
+      ['Parallel slots',typeof run.model.instanceConfig?.parallel==='number'?String(run.model.instanceConfig.parallel):null]
+     ] as [string,string|null][]).map(([label,value])=><div key={label}><small>{label}</small><b>{value??'not reported'}</b></div>)}
+    </div>
+    <p className="hint">Read from the endpoint's model record when the sweep started. Values it does not report stay unavailable rather than being guessed from the model name. <code>{run.model.key}</code></p>
+   </section>}
 
    <section className="panel timeline-panel">
     <div className="section-heading">
@@ -283,7 +309,7 @@ function SweepDetails({run}:{run:AgenticRun}){
  return <><pre>{JSON.stringify({config:run.config,environment:run.environment},null,2)}</pre><pre>{run.logs.join('\n')||'No additional messages.'}</pre></>;
 }
 
-function SweepForm({models,host,turnCost,busy,onStart,onError}:{models:Model[];host:{cpu:string;threads:number};turnCost:number;busy:boolean;onStart:(c:AgenticConfig)=>Promise<void>;onError:(message:string)=>void}){
+function SweepForm({managed,models,host,turnCost,busy,onStart,onError}:{managed:boolean;models:Model[];host:{cpu:string;threads:number};turnCost:number;busy:boolean;onStart:(c:AgenticConfig)=>Promise<void>;onError:(message:string)=>void}){
  const [config,setConfig]=useState<AgenticConfig>(()=>structuredClone(defaultAgenticConfig));
  const set=<K extends keyof AgenticConfig>(key:K,value:AgenticConfig[K])=>setConfig(c=>({...c,[key]:value}));
  const allowed=useMemo(()=>reasoningOptions(models,config.modelKey?[config.modelKey]:[]),[models,config.modelKey]);
@@ -292,6 +318,9 @@ function SweepForm({models,host,turnCost,busy,onStart,onError}:{models:Model[];h
  // not clone and re-check the whole configuration on every keystroke.
  const problem=useMemo(()=>{try{validateAgenticConfig(structuredClone(config));return '';}catch(e){return (e as Error).message;}},[config]);
  const highest=config.workers.length?Math.max(...config.workers):0;
+ const chosen=models.find(m=>m.key===config.modelKey)??null;
+ const loadedInstances=chosen?.loaded_instances??[];
+ useEffect(()=>{if(!managed)setConfig(c=>({...c,instance:'loaded',instanceId:models.find(m=>m.key===c.modelKey)?.loaded_instances[0]?.id??'',cacheK:'off',cacheV:'off'}));},[managed,config.modelKey,models]);
  const preset=presetName(config);
  const estimate=config.workers.length?estimateSweepMs(config,turnCost,host.threads):0;
  const pastThreads=config.workers.some(w=>w>host.threads);
@@ -299,10 +328,10 @@ function SweepForm({models,host,turnCost,busy,onStart,onError}:{models:Model[];h
  return <section className="panel sweep-form">
   <div className="section-heading"><div><div className="eyebrow">SWEEP SETUP</div><h2>Replay the same agent turns at every worker count</h2></div></div>
 
-  <div className="segmented wide">{(['off','on'] as const).map(mode=><button key={mode} type="button" className={config.modelCall===mode?'chosen':''} onClick={()=>set('modelCall',mode)}>{mode==='off'?'Model call off · this machine only':'Model call on · use a model in LM Studio'}</button>)}</div>
+  <div className="segmented wide">{(['off','on'] as const).map(mode=><button key={mode} type="button" className={config.modelCall===mode?'chosen':''} onClick={()=>set('modelCall',mode)}>{mode==='off'?'Model call off · this machine only':'Model call on · use your endpoint'}</button>)}</div>
   <p className="hint">{modelOn
    ?'Each turn sends one real request to the selected model, then does the host-side work. Use this to see where the GPU becomes the limit.'
-   :'No model is loaded and LM Studio is not contacted. Every millisecond measured is this machine doing agent work — the right choice for comparing two CPUs.'}</p>
+   :'No model is loaded and the inference server is not contacted. Every millisecond measured is this machine doing agent work — the right choice for comparing two CPUs.'}</p>
 
   <div className="presets">{[...Object.keys(agenticPresets),'Custom'].map(name=>{
    const spec=agenticPresets[name];
@@ -321,11 +350,23 @@ function SweepForm({models,host,turnCost,busy,onStart,onError}:{models:Model[];h
     </div>
 
     {modelOn&&<div className="form-grid">
-     <label className="field"><span>Model</span><select aria-label="Sweep model" value={config.modelKey} onChange={e=>set('modelKey',e.target.value)}><option value="">Choose a downloaded model…</option>{models.map(m=><option key={m.key} value={m.key}>{m.display_name}</option>)}</select>{!models.length&&<small className="amber">No models found. Refresh the library on the Models screen, or leave the model call off.</small>}</label>
+     <label className="field"><span>Model</span><select aria-label="Sweep model" value={config.modelKey} onChange={e=>{const key=e.target.value;const has=(models.find(m=>m.key===key)?.loaded_instances.length??0)>0;setConfig(c=>({...c,modelKey:key,instanceId:'',instance:has?c.instance:'load'}));}}><option value="">Choose an available model…</option>{models.map(m=><option key={m.key} value={m.key}>{m.display_name}{m.quantization?.name?` · ${m.quantization.name}`:''}{m.loaded_instances.length?' · loaded':''}</option>)}</select>{!models.length&&<small className="amber">No models found. Refresh the library on the Models screen, or leave the model call off.</small>}{chosen&&<small>{[chosen.quantization?.name,chosen.size_bytes?`${(chosen.size_bytes/1e9).toFixed(1)} GB`:null,chosen.max_context_length?`${(chosen.max_context_length/1024).toFixed(0)}k context`:null].filter(Boolean).join(' · ')}</small>}</label>
      <label className="field"><span>Output tokens per turn</span><input aria-label="Output tokens per turn" type="number" min="1" value={config.maxTokens} onChange={e=>set('maxTokens',+e.target.value)}/><small>Keep this small: the sweep is about how often turns happen, not how long each answer is.</small></label>
-     <label className="field"><span>Context per turn</span><input aria-label="Context per turn" type="number" min="512" step="512" value={config.contextLength} onChange={e=>set('contextLength',+e.target.value)}/><small>The instance loads with this times the highest worker count: {highest?(config.contextLength*highest).toLocaleString():'—'} tokens.</small></label>
+     {managed&&<label className="field"><span>Context per turn</span><input aria-label="Context per turn" type="number" min="512" step="512" value={config.contextLength} onChange={e=>set('contextLength',+e.target.value)}/><small>The instance loads with this times the highest worker count: {highest?(config.contextLength*highest).toLocaleString():'—'} tokens.</small></label>}
      <label className="field"><span>Reasoning</span><select aria-label="Sweep reasoning" value={config.reasoning} onChange={e=>set('reasoning',e.target.value)}><option value="default">Model default</option>{allowed.map(v=><option key={v} value={v}>{v}</option>)}</select></label>
     </div>}
+
+    {modelOn&&<>
+   {managed&&<div className="segmented wide">{(['load','loaded'] as const).map(mode=><button key={mode} type="button" className={config.instance===mode?'chosen':''} disabled={mode==='loaded'&&!loadedInstances.length} onClick={()=>set('instance',mode)}>{mode==='load'?'Load the model for this sweep':`Use a model already loaded${loadedInstances.length?'':' · none loaded'}`}</button>)}</div>}
+   {!managed?<p className="server-owned">Uses the model served by your endpoint. Context, parallel slots, cache, and GPU settings stay under server control.</p>:config.instance==='loaded'
+    ?<label className="field"><span>Loaded instance</span><select aria-label="Loaded instance" value={config.instanceId} onChange={e=>set('instanceId',e.target.value)}><option value="">Choose a loaded instance…</option>{loadedInstances.map(i=><option key={i.id} value={i.id}>{i.id} · {i.config.context_length?.toLocaleString?.()??i.config.context_length} tokens · {typeof i.config.parallel==='number'?`${i.config.parallel} slot${i.config.parallel===1?'':'s'}`:'slots unknown'}</option>)}</select><small>Nothing about it is changed — not its context, its slots or its cache — and it is left loaded when the sweep ends. Context, cache and flash attention below do not apply.</small></label>
+    :<div className="form-grid">
+      <label className="field"><span>K cache</span><select aria-label="K cache" value={config.cacheK} onChange={e=>set('cacheK',e.target.value as typeof config.cacheK)}>{cacheQuants.map(q=><option key={q} value={q}>{cacheQuantLabel(q)}</option>)}</select></label>
+      <label className="field"><span>V cache</span><select aria-label="V cache" value={config.cacheV} onChange={e=>set('cacheV',e.target.value as typeof config.cacheV)}>{cacheQuants.map(q=><option key={q} value={q}>{cacheQuantLabel(q)}</option>)}</select></label>
+      <label className="field"><span>Flash attention</span><select aria-label="Flash attention" value={config.flashAttention} onChange={e=>set('flashAttention',e.target.value as 'on'|'off')}><option value="on">On</option><option value="off">Off</option></select><small>{needsFlashAttention(config.cacheK,config.cacheV)?'Required by the chosen cache: llama.cpp cannot use a quantized cache without it.':'Leaving it on is the faster choice on both engines.'}</small></label>
+     </div>}
+   {config.instance==='load'&&<p className="hint">A sweep loads one instance with a slot per worker, so the KV cache is the part of the memory that grows with the worker count. At {highest||1} workers a {cacheText(config)} cache holds about {(cacheScalePair(config.cacheK,config.cacheV)*100).toFixed(0)}% of what f16 would, which is usually what decides whether the highest worker counts stay on the GPU.</p>}
+  </>}
     {modelOn&&<label className="field"><span>Agent turn prompt</span><textarea aria-label="Agent turn prompt" rows={3} value={config.prompt} onChange={e=>set('prompt',e.target.value)}/><small>Every turn sends this prompt with its own turn identifier, so repeated turns are not served from one cached prefix.</small></label>}
 
     <div className="pill-group"><span className="pill-label">WORKER COUNTS TO SWEEP</span><div className="pills" role="group" aria-label="Worker counts to sweep">{agenticWorkerChoices.map(w=><button key={w} type="button" className={config.workers.includes(w)?'pill chosen':'pill'} aria-pressed={config.workers.includes(w)} title={w<=host.threads?`${w} of this machine's ${host.threads} threads`:`More workers than this machine's ${host.threads} threads — turns will queue`} onClick={()=>toggleWorker(w)}>{w}w</button>)}</div></div>

@@ -1,0 +1,855 @@
+{
+  "parentHash": "ca9a91d9e605ddbd8b77af341d0a0655df90cf918d762c9d8a322fc5fe9cc9b3",
+  "datasetHash": "c53da072b6b41b1ce43386a95ee3f4e452de2004913f8546b96a942f1bade6c5",
+  "protocol": "berkeley-enron-challenge-v1; 20 highest-complexity full emails per genre from consensus corpus; complexity = log2(1 + body characters) + 2 * capped thread markers; deduplicate normalized full messages; seeded balanced round-robin sampling; strict genre JSON; accuracy and six-class macro-F1",
+  "categoryCounts": [
+    20,
+    20,
+    20,
+    20,
+    20,
+    20
+  ],
+  "selection": [
+    {
+      "itemId": "221411",
+      "genre_id": 1,
+      "bodyCharacters": 13993,
+      "threadMarkers": 25,
+      "score": 53.77252077631476
+    },
+    {
+      "itemId": "218963",
+      "genre_id": 1,
+      "bodyCharacters": 10935,
+      "threadMarkers": 37,
+      "score": 53.41679752760606
+    },
+    {
+      "itemId": "175419",
+      "genre_id": 1,
+      "bodyCharacters": 10338,
+      "threadMarkers": 20,
+      "score": 53.3358090328224
+    },
+    {
+      "itemId": "51882",
+      "genre_id": 1,
+      "bodyCharacters": 6818,
+      "threadMarkers": 79,
+      "score": 52.735344469539
+    },
+    {
+      "itemId": "174207",
+      "genre_id": 1,
+      "bodyCharacters": 6250,
+      "threadMarkers": 129,
+      "score": 52.60987128717883
+    },
+    {
+      "itemId": "129203",
+      "genre_id": 1,
+      "bodyCharacters": 5411,
+      "threadMarkers": 30,
+      "score": 52.401946123976536
+    },
+    {
+      "itemId": "124672",
+      "genre_id": 1,
+      "bodyCharacters": 4810,
+      "threadMarkers": 21,
+      "score": 52.23212108408222
+    },
+    {
+      "itemId": "82355",
+      "genre_id": 1,
+      "bodyCharacters": 3978,
+      "threadMarkers": 25,
+      "score": 51.95819018369374
+    },
+    {
+      "itemId": "220746",
+      "genre_id": 1,
+      "bodyCharacters": 3841,
+      "threadMarkers": 20,
+      "score": 51.90764180366553
+    },
+    {
+      "itemId": "114715",
+      "genre_id": 1,
+      "bodyCharacters": 3651,
+      "threadMarkers": 38,
+      "score": 51.834471049984224
+    },
+    {
+      "itemId": "82386",
+      "genre_id": 1,
+      "bodyCharacters": 3641,
+      "threadMarkers": 20,
+      "score": 51.83051520697684
+    },
+    {
+      "itemId": "175571",
+      "genre_id": 1,
+      "bodyCharacters": 2543,
+      "threadMarkers": 34,
+      "score": 51.31288295528435
+    },
+    {
+      "itemId": "229317",
+      "genre_id": 1,
+      "bodyCharacters": 2152,
+      "threadMarkers": 25,
+      "score": 51.07213260416724
+    },
+    {
+      "itemId": "232421",
+      "genre_id": 1,
+      "bodyCharacters": 5082,
+      "threadMarkers": 19,
+      "score": 50.31146451544844
+    },
+    {
+      "itemId": "173413",
+      "genre_id": 1,
+      "bodyCharacters": 14695,
+      "threadMarkers": 18,
+      "score": 49.84313591111135
+    },
+    {
+      "itemId": "176499",
+      "genre_id": 1,
+      "bodyCharacters": 8323,
+      "threadMarkers": 18,
+      "score": 49.023061249735335
+    },
+    {
+      "itemId": "233077",
+      "genre_id": 1,
+      "bodyCharacters": 6646,
+      "threadMarkers": 16,
+      "score": 44.698487638557694
+    },
+    {
+      "itemId": "54531",
+      "genre_id": 1,
+      "bodyCharacters": 4590,
+      "threadMarkers": 15,
+      "score": 42.16459271671236
+    },
+    {
+      "itemId": "219145",
+      "genre_id": 1,
+      "bodyCharacters": 3502,
+      "threadMarkers": 15,
+      "score": 41.77437527280206
+    },
+    {
+      "itemId": "82353",
+      "genre_id": 1,
+      "bodyCharacters": 3100,
+      "threadMarkers": 15,
+      "score": 41.59851781061262
+    },
+    {
+      "itemId": "173997",
+      "genre_id": 2,
+      "bodyCharacters": 7095,
+      "threadMarkers": 120,
+      "score": 52.792790294301064
+    },
+    {
+      "itemId": "173954",
+      "genre_id": 2,
+      "bodyCharacters": 915,
+      "threadMarkers": 6,
+      "score": 21.839203788096945
+    },
+    {
+      "itemId": "1825",
+      "genre_id": 2,
+      "bodyCharacters": 1937,
+      "threadMarkers": 5,
+      "score": 20.920352855415082
+    },
+    {
+      "itemId": "54659",
+      "genre_id": 2,
+      "bodyCharacters": 1364,
+      "threadMarkers": 5,
+      "score": 20.414685235807212
+    },
+    {
+      "itemId": "54544",
+      "genre_id": 2,
+      "bodyCharacters": 339,
+      "threadMarkers": 5,
+      "score": 18.409390936137704
+    },
+    {
+      "itemId": "192771",
+      "genre_id": 2,
+      "bodyCharacters": 565,
+      "threadMarkers": 4,
+      "score": 17.14465824283188
+    },
+    {
+      "itemId": "175499",
+      "genre_id": 2,
+      "bodyCharacters": 506,
+      "threadMarkers": 4,
+      "score": 16.985841937003343
+    },
+    {
+      "itemId": "173949",
+      "genre_id": 2,
+      "bodyCharacters": 1964,
+      "threadMarkers": 3,
+      "score": 16.940313597145966
+    },
+    {
+      "itemId": "177835",
+      "genre_id": 2,
+      "bodyCharacters": 3252,
+      "threadMarkers": 2,
+      "score": 15.667555107041132
+    },
+    {
+      "itemId": "7725",
+      "genre_id": 2,
+      "bodyCharacters": 1332,
+      "threadMarkers": 2,
+      "score": 14.380461065088973
+    },
+    {
+      "itemId": "175736",
+      "genre_id": 2,
+      "bodyCharacters": 1247,
+      "threadMarkers": 2,
+      "score": 14.285402218862249
+    },
+    {
+      "itemId": "176572",
+      "genre_id": 2,
+      "bodyCharacters": 1006,
+      "threadMarkers": 2,
+      "score": 13.975847968006784
+    },
+    {
+      "itemId": "177836",
+      "genre_id": 2,
+      "bodyCharacters": 996,
+      "threadMarkers": 2,
+      "score": 13.961449694398196
+    },
+    {
+      "itemId": "175322",
+      "genre_id": 2,
+      "bodyCharacters": 947,
+      "threadMarkers": 2,
+      "score": 13.888743248898258
+    },
+    {
+      "itemId": "175318",
+      "genre_id": 2,
+      "bodyCharacters": 568,
+      "threadMarkers": 2,
+      "score": 13.152284842306582
+    },
+    {
+      "itemId": "173410",
+      "genre_id": 2,
+      "bodyCharacters": 396,
+      "threadMarkers": 2,
+      "score": 12.632995197142957
+    },
+    {
+      "itemId": "9176",
+      "genre_id": 2,
+      "bodyCharacters": 3616,
+      "threadMarkers": 0,
+      "score": 11.820577882655774
+    },
+    {
+      "itemId": "175309",
+      "genre_id": 2,
+      "bodyCharacters": 202,
+      "threadMarkers": 2,
+      "score": 11.665335917185176
+    },
+    {
+      "itemId": "194942",
+      "genre_id": 2,
+      "bodyCharacters": 372,
+      "threadMarkers": 0,
+      "score": 8.543031820255237
+    },
+    {
+      "itemId": "173986",
+      "genre_id": 2,
+      "bodyCharacters": 282,
+      "threadMarkers": 0,
+      "score": 8.144658242831882
+    },
+    {
+      "itemId": "54605",
+      "genre_id": 3,
+      "bodyCharacters": 3065,
+      "threadMarkers": 91,
+      "score": 51.58214198165878
+    },
+    {
+      "itemId": "54595",
+      "genre_id": 3,
+      "bodyCharacters": 2068,
+      "threadMarkers": 49,
+      "score": 51.01471792986001
+    },
+    {
+      "itemId": "229326",
+      "genre_id": 3,
+      "bodyCharacters": 1113,
+      "threadMarkers": 19,
+      "score": 48.12153351734003
+    },
+    {
+      "itemId": "175222",
+      "genre_id": 3,
+      "bodyCharacters": 1564,
+      "threadMarkers": 12,
+      "score": 34.61194694181998
+    },
+    {
+      "itemId": "175217",
+      "genre_id": 3,
+      "bodyCharacters": 1100,
+      "threadMarkers": 11,
+      "score": 32.10459875356437
+    },
+    {
+      "itemId": "174075",
+      "genre_id": 3,
+      "bodyCharacters": 1442,
+      "threadMarkers": 9,
+      "score": 28.494855584491198
+    },
+    {
+      "itemId": "176580",
+      "genre_id": 3,
+      "bodyCharacters": 2306,
+      "threadMarkers": 8,
+      "score": 27.171802288682983
+    },
+    {
+      "itemId": "175501",
+      "genre_id": 3,
+      "bodyCharacters": 845,
+      "threadMarkers": 8,
+      "score": 25.72451385311995
+    },
+    {
+      "itemId": "175810",
+      "genre_id": 3,
+      "bodyCharacters": 451,
+      "threadMarkers": 8,
+      "score": 24.820178962415188
+    },
+    {
+      "itemId": "175159",
+      "genre_id": 3,
+      "bodyCharacters": 3555,
+      "threadMarkers": 6,
+      "score": 23.79603960882977
+    },
+    {
+      "itemId": "115323",
+      "genre_id": 3,
+      "bodyCharacters": 13681,
+      "threadMarkers": 5,
+      "score": 23.739991514684228
+    },
+    {
+      "itemId": "175209",
+      "genre_id": 3,
+      "bodyCharacters": 1103,
+      "threadMarkers": 6,
+      "score": 22.10852445677817
+    },
+    {
+      "itemId": "175621",
+      "genre_id": 3,
+      "bodyCharacters": 1132,
+      "threadMarkers": 5,
+      "score": 20.145932145820517
+    },
+    {
+      "itemId": "175622",
+      "genre_id": 3,
+      "bodyCharacters": 12843,
+      "threadMarkers": 3,
+      "score": 19.64880694972577
+    },
+    {
+      "itemId": "121756",
+      "genre_id": 3,
+      "bodyCharacters": 703,
+      "threadMarkers": 5,
+      "score": 19.459431618637296
+    },
+    {
+      "itemId": "174212",
+      "genre_id": 3,
+      "bodyCharacters": 2797,
+      "threadMarkers": 4,
+      "score": 19.450180247164752
+    },
+    {
+      "itemId": "165052",
+      "genre_id": 3,
+      "bodyCharacters": 624,
+      "threadMarkers": 5,
+      "score": 19.287712379549447
+    },
+    {
+      "itemId": "54642",
+      "genre_id": 3,
+      "bodyCharacters": 565,
+      "threadMarkers": 5,
+      "score": 19.14465824283188
+    },
+    {
+      "itemId": "54660",
+      "genre_id": 3,
+      "bodyCharacters": 464,
+      "threadMarkers": 5,
+      "score": 18.861086905995393
+    },
+    {
+      "itemId": "174517",
+      "genre_id": 3,
+      "bodyCharacters": 5122,
+      "threadMarkers": 3,
+      "score": 18.322773176454564
+    },
+    {
+      "itemId": "54568",
+      "genre_id": 4,
+      "bodyCharacters": 4807,
+      "threadMarkers": 69,
+      "score": 52.23122118071119
+    },
+    {
+      "itemId": "54682",
+      "genre_id": 4,
+      "bodyCharacters": 4153,
+      "threadMarkers": 74,
+      "score": 52.02028550084465
+    },
+    {
+      "itemId": "54261",
+      "genre_id": 4,
+      "bodyCharacters": 2753,
+      "threadMarkers": 25,
+      "score": 51.42731284413496
+    },
+    {
+      "itemId": "54262",
+      "genre_id": 4,
+      "bodyCharacters": 2716,
+      "threadMarkers": 25,
+      "score": 51.40779885022197
+    },
+    {
+      "itemId": "55027",
+      "genre_id": 4,
+      "bodyCharacters": 2711,
+      "threadMarkers": 62,
+      "score": 51.405141463136346
+    },
+    {
+      "itemId": "52998",
+      "genre_id": 4,
+      "bodyCharacters": 2473,
+      "threadMarkers": 31,
+      "score": 51.272629784976374
+    },
+    {
+      "itemId": "49059",
+      "genre_id": 4,
+      "bodyCharacters": 2416,
+      "threadMarkers": 20,
+      "score": 51.23900175776558
+    },
+    {
+      "itemId": "54928",
+      "genre_id": 4,
+      "bodyCharacters": 2318,
+      "threadMarkers": 36,
+      "score": 51.17928710464601
+    },
+    {
+      "itemId": "55025",
+      "genre_id": 4,
+      "bodyCharacters": 2126,
+      "threadMarkers": 52,
+      "score": 51.054604317960674
+    },
+    {
+      "itemId": "174311",
+      "genre_id": 4,
+      "bodyCharacters": 2970,
+      "threadMarkers": 16,
+      "score": 43.53673288983541
+    },
+    {
+      "itemId": "139363",
+      "genre_id": 4,
+      "bodyCharacters": 2878,
+      "threadMarkers": 15,
+      "score": 41.491352073563434
+    },
+    {
+      "itemId": "139361",
+      "genre_id": 4,
+      "bodyCharacters": 2850,
+      "threadMarkers": 15,
+      "score": 41.477252323937954
+    },
+    {
+      "itemId": "115612",
+      "genre_id": 4,
+      "bodyCharacters": 3903,
+      "threadMarkers": 14,
+      "score": 39.93073733756289
+    },
+    {
+      "itemId": "174448",
+      "genre_id": 4,
+      "bodyCharacters": 8042,
+      "threadMarkers": 13,
+      "score": 38.97351800470372
+    },
+    {
+      "itemId": "175374",
+      "genre_id": 4,
+      "bodyCharacters": 1864,
+      "threadMarkers": 12,
+      "score": 34.8649599151426
+    },
+    {
+      "itemId": "233283",
+      "genre_id": 4,
+      "bodyCharacters": 1556,
+      "threadMarkers": 12,
+      "score": 34.60455322907904
+    },
+    {
+      "itemId": "200845",
+      "genre_id": 4,
+      "bodyCharacters": 5364,
+      "threadMarkers": 10,
+      "score": 32.389362455643884
+    },
+    {
+      "itemId": "173409",
+      "genre_id": 4,
+      "bodyCharacters": 3889,
+      "threadMarkers": 10,
+      "score": 31.925554439873554
+    },
+    {
+      "itemId": "54863",
+      "genre_id": 4,
+      "bodyCharacters": 1370,
+      "threadMarkers": 10,
+      "score": 30.421012855779225
+    },
+    {
+      "itemId": "54652",
+      "genre_id": 4,
+      "bodyCharacters": 870,
+      "threadMarkers": 10,
+      "score": 29.766528908598865
+    },
+    {
+      "itemId": "52992",
+      "genre_id": 5,
+      "bodyCharacters": 5286,
+      "threadMarkers": 157,
+      "score": 52.368233611380944
+    },
+    {
+      "itemId": "61371",
+      "genre_id": 5,
+      "bodyCharacters": 3520,
+      "threadMarkers": 25,
+      "score": 51.78176951186313
+    },
+    {
+      "itemId": "52993",
+      "genre_id": 5,
+      "bodyCharacters": 3119,
+      "threadMarkers": 34,
+      "score": 51.607330313749614
+    },
+    {
+      "itemId": "176730",
+      "genre_id": 5,
+      "bodyCharacters": 4683,
+      "threadMarkers": 15,
+      "score": 42.19352536050121
+    },
+    {
+      "itemId": "54641",
+      "genre_id": 5,
+      "bodyCharacters": 1508,
+      "threadMarkers": 15,
+      "score": 40.55937709052668
+    },
+    {
+      "itemId": "54538",
+      "genre_id": 5,
+      "bodyCharacters": 1483,
+      "threadMarkers": 15,
+      "score": 40.5352753766208
+    },
+    {
+      "itemId": "174390",
+      "genre_id": 5,
+      "bodyCharacters": 1696,
+      "threadMarkers": 13,
+      "score": 36.72877084954266
+    },
+    {
+      "itemId": "173850",
+      "genre_id": 5,
+      "bodyCharacters": 3796,
+      "threadMarkers": 12,
+      "score": 35.89064428361909
+    },
+    {
+      "itemId": "176483",
+      "genre_id": 5,
+      "bodyCharacters": 1016,
+      "threadMarkers": 11,
+      "score": 31.9901039638575
+    },
+    {
+      "itemId": "193686",
+      "genre_id": 5,
+      "bodyCharacters": 2406,
+      "threadMarkers": 10,
+      "score": 31.233020426474496
+    },
+    {
+      "itemId": "175803",
+      "genre_id": 5,
+      "bodyCharacters": 1645,
+      "threadMarkers": 9,
+      "score": 28.684748620421626
+    },
+    {
+      "itemId": "174233",
+      "genre_id": 5,
+      "bodyCharacters": 2472,
+      "threadMarkers": 7,
+      "score": 25.272046524389935
+    },
+    {
+      "itemId": "174170",
+      "genre_id": 5,
+      "bodyCharacters": 1260,
+      "threadMarkers": 7,
+      "score": 24.30035256032822
+    },
+    {
+      "itemId": "173952",
+      "genre_id": 5,
+      "bodyCharacters": 1033,
+      "threadMarkers": 7,
+      "score": 24.014020470314932
+    },
+    {
+      "itemId": "150002",
+      "genre_id": 5,
+      "bodyCharacters": 1232,
+      "threadMarkers": 6,
+      "score": 22.267957084402838
+    },
+    {
+      "itemId": "54542",
+      "genre_id": 5,
+      "bodyCharacters": 2524,
+      "threadMarkers": 5,
+      "score": 21.30206767252652
+    },
+    {
+      "itemId": "173332",
+      "genre_id": 5,
+      "bodyCharacters": 1266,
+      "threadMarkers": 5,
+      "score": 20.30720080914081
+    },
+    {
+      "itemId": "54557",
+      "genre_id": 5,
+      "bodyCharacters": 1256,
+      "threadMarkers": 5,
+      "score": 20.295768934420508
+    },
+    {
+      "itemId": "173415",
+      "genre_id": 5,
+      "bodyCharacters": 1235,
+      "threadMarkers": 5,
+      "score": 20.271463027904375
+    },
+    {
+      "itemId": "173822",
+      "genre_id": 5,
+      "bodyCharacters": 998,
+      "threadMarkers": 5,
+      "score": 19.964340867792416
+    },
+    {
+      "itemId": "174190",
+      "genre_id": 6,
+      "bodyCharacters": 4257,
+      "threadMarkers": 29,
+      "score": 52.05596023445229
+    },
+    {
+      "itemId": "54679",
+      "genre_id": 6,
+      "bodyCharacters": 4003,
+      "threadMarkers": 121,
+      "score": 51.96722625883599
+    },
+    {
+      "itemId": "54663",
+      "genre_id": 6,
+      "bodyCharacters": 1083,
+      "threadMarkers": 16,
+      "score": 42.08214904135387
+    },
+    {
+      "itemId": "176680",
+      "genre_id": 6,
+      "bodyCharacters": 1750,
+      "threadMarkers": 11,
+      "score": 32.773963368433556
+    },
+    {
+      "itemId": "175502",
+      "genre_id": 6,
+      "bodyCharacters": 6508,
+      "threadMarkers": 10,
+      "score": 32.668220198888896
+    },
+    {
+      "itemId": "127099",
+      "genre_id": 6,
+      "bodyCharacters": 2889,
+      "threadMarkers": 10,
+      "score": 31.49685377738804
+    },
+    {
+      "itemId": "173818",
+      "genre_id": 6,
+      "bodyCharacters": 2337,
+      "threadMarkers": 10,
+      "score": 31.191059214531656
+    },
+    {
+      "itemId": "173248",
+      "genre_id": 6,
+      "bodyCharacters": 1688,
+      "threadMarkers": 9,
+      "score": 28.721953612801386
+    },
+    {
+      "itemId": "177822",
+      "genre_id": 6,
+      "bodyCharacters": 1337,
+      "threadMarkers": 9,
+      "score": 28.38586240064146
+    },
+    {
+      "itemId": "176697",
+      "genre_id": 6,
+      "bodyCharacters": 2094,
+      "threadMarkers": 8,
+      "score": 27.032734528586715
+    },
+    {
+      "itemId": "174174",
+      "genre_id": 6,
+      "bodyCharacters": 1513,
+      "threadMarkers": 8,
+      "score": 26.56414948998573
+    },
+    {
+      "itemId": "173764",
+      "genre_id": 6,
+      "bodyCharacters": 2370,
+      "threadMarkers": 7,
+      "score": 25.21127994748201
+    },
+    {
+      "itemId": "174447",
+      "genre_id": 6,
+      "bodyCharacters": 1897,
+      "threadMarkers": 7,
+      "score": 24.89026427702111
+    },
+    {
+      "itemId": "174064",
+      "genre_id": 6,
+      "bodyCharacters": 1736,
+      "threadMarkers": 7,
+      "score": 24.762382038710392
+    },
+    {
+      "itemId": "173407",
+      "genre_id": 6,
+      "bodyCharacters": 2464,
+      "threadMarkers": 6,
+      "score": 23.267371931265274
+    },
+    {
+      "itemId": "175731",
+      "genre_id": 6,
+      "bodyCharacters": 632,
+      "threadMarkers": 6,
+      "score": 21.30606168942834
+    },
+    {
+      "itemId": "177826",
+      "genre_id": 6,
+      "bodyCharacters": 2240,
+      "threadMarkers": 5,
+      "score": 21.129926933510394
+    },
+    {
+      "itemId": "175677",
+      "genre_id": 6,
+      "bodyCharacters": 1808,
+      "threadMarkers": 5,
+      "score": 20.82097669262124
+    },
+    {
+      "itemId": "174187",
+      "genre_id": 6,
+      "bodyCharacters": 1600,
+      "threadMarkers": 5,
+      "score": 20.644757592516257
+    },
+    {
+      "itemId": "174417",
+      "genre_id": 6,
+      "bodyCharacters": 1576,
+      "threadMarkers": 5,
+      "score": 20.622966944790512
+    }
+  ]
+}

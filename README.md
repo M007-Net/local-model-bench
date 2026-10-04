@@ -1,24 +1,25 @@
 # Local Model Bench
 
-A Windows desktop app for testing downloaded LM Studio models at multiple concurrency levels, keeping the full responses, and grading them transparently.
+A Windows desktop app for comparing models served by LM Studio, llama.cpp, and OpenAI-compatible endpoints at multiple concurrency levels, keeping full responses and grading them transparently.
 
 > **This is an unofficial community project.** It is not affiliated with,
-> endorsed by, or supported by LM Studio. It talks to LM Studio's local API on
-> loopback, and to nothing else.
+> endorsed by, or supported by LM Studio. You choose the inference server; local
+> storage does not mean a remote server receives no data.
 
 ## What this is, in plain words
 
-You already run AI models on your own computer using a free program called
-**LM Studio**. This app asks those models a set of questions, times how fast they
+You already serve AI models using **LM Studio**, **llama.cpp**, or another
+OpenAI-compatible server. This app asks those models a set of questions, times how fast they
 answer, checks whether the answers are right, and shows you the results side by
-side. Everything happens on your machine. Nothing is uploaded.
+side. Results are saved on your machine. Prompts and responses travel to the
+endpoint you select, which can be local or remote.
 
 It is useful for answering questions like *"is the bigger model actually better
 for what I do, or just slower?"*
 
-It only measures models you have already downloaded. It never downloads a model,
-never runs code a model writes, never browses the web, and never contacts a cloud
-AI provider.
+It measures models available through your selected server. It never downloads a
+model or runs code a model writes. A remote or hosted endpoint receives your
+prompts, responses, and any token you configure for it.
 
 ---
 
@@ -27,12 +28,13 @@ AI provider.
 - [Before you start](#before-you-start) — the two things you need
 - [Step 1: Install and open the app](#step-1-install-and-open-the-app)
 - [Step 2: Run your first benchmark](#step-2-run-your-first-benchmark)
+- [Choose an endpoint](#choose-an-endpoint) — LM Studio, llama.cpp, or another compatible server
 - [Step 3: Read the results](#step-3-read-the-results)
 - [If something looks wrong](#if-something-looks-wrong)
 - [Build from source](#build-from-source) — only if you want to compile it yourself
 - [Choose the engine, and compare engines](#choose-the-engine-and-compare-engines-1100) — which llama.cpp build, and setting two side by side
 - [Quantize the context](#quantize-the-context-1100) — the memory that grows with concurrency
-- [Agent worker sweep](#agent-worker-sweep-1160) — what this PC does with the answers, and where more agents stop helping
+- [Agent worker sweep](#agent-worker-sweep-1170) — what this PC does with the answers, and where more agents stop helping
 
 Everything after that is reference material. You do not need it to get going.
 
@@ -40,9 +42,9 @@ Everything after that is reference material. You do not need it to get going.
 
 ## Before you start
 
-You need two things. Both are free.
+You need a running inference server and a Windows PC.
 
-**1. LM Studio, with at least one model downloaded.**
+**1. An inference server with a model available.** For LM Studio:
 
 - Get it from <https://lmstudio.ai> and install it like any other program.
 - Open it. Go to the **Discover** tab (the magnifying glass), pick any model, and
@@ -51,9 +53,13 @@ You need two things. Both are free.
 - Go to the **Developer** tab and turn the local server **on**. You should see it
   say it is running on port `1234`.
 
-> **Why the server?** Local Model Bench talks to LM Studio the same way a web page
-> talks to a website — except it never leaves your computer. If the server is off,
-> there is nothing for it to talk to.
+For llama.cpp, start `llama-server` with your model, then choose its endpoint in
+the app. Other servers must support model discovery and streamed OpenAI chat
+completions. See [Choose an endpoint](#choose-an-endpoint).
+
+> **Why the server?** Local Model Bench sends requests to the address you configure.
+> If that server is off, there is nothing for it to talk to. A remote address sends
+> the request to another machine.
 
 **2. Windows 10 or 11, 64-bit.** That is all. You do not need an administrator
 account, and nothing here needs Python or a terminal.
@@ -64,7 +70,7 @@ account, and nothing here needs Python or a terminal.
 
 1. Go to the
    [Releases page](https://github.com/M007-Net/local-model-bench/releases) and
-   download the file named `Local-Model-Bench-Setup-1.9.0.exe`.
+   download the latest installer named `Local-Model-Bench-Setup-<version>.exe`.
 
    > If that page is empty or you cannot open it, no release has been published
    > yet. Until one is, the only way to get the app is
@@ -73,10 +79,11 @@ account, and nothing here needs Python or a terminal.
 
 2. **Check the file is genuine before you run it.** This installer is not
    code-signed, so this check is the only way to be sure you got the real file.
-   Right-click the Start button, choose **Terminal**, and paste this in:
+   Right-click the Start button, choose **Terminal**, and use the downloaded
+   installer's actual filename in place of `<version>`:
 
    ```powershell
-   Get-FileHash -Algorithm SHA256 "$HOME\Downloads\Local-Model-Bench-Setup-1.9.0.exe"
+   Get-FileHash -Algorithm SHA256 "$HOME\Downloads\Local-Model-Bench-Setup-<version>.exe"
    ```
 
    It prints a long string of letters and numbers. It must match the one listed on
@@ -95,10 +102,11 @@ account, and nothing here needs Python or a terminal.
 
 ## Step 2: Run your first benchmark
 
-1. Look at the top-right corner. It should say **LM Studio connected**. If it says
-   something else, see [If something looks wrong](#if-something-looks-wrong).
+1. Select and save your server in **Settings**, then refresh the connection. The
+   header shows the selected provider and its connection status. If it cannot
+   connect, check the address, server, and optional API token.
 
-2. Your downloaded models appear as cards. **Click one** to select it. A tick
+2. The models available from that endpoint appear as cards. **Click one** to select it. A tick
    appears in its corner. You can pick more than one to compare them.
 
 3. Click **Configure benchmark**.
@@ -163,15 +171,52 @@ the next launch.
 
 ---
 
+## Choose an endpoint
+
+Open **Settings**, choose the provider, enter its server address and optional API
+token, then save and refresh the model list. The connection status describes the
+saved endpoint. Changing the address in the form takes effect after saving.
+For compatible APIs, use the server origin, such as `http://127.0.0.1:8080`,
+to call `/v1/models` and `/v1/chat/completions`. If the API uses another prefix,
+include it in the address, such as `https://server.example/api`, to call
+`/api/models` and `/api/chat/completions`. Queries, fragments, encoded path
+characters, and credentials embedded in the address are not accepted.
+
+| Provider | Typical address | How models are used |
+| --- | --- | --- |
+| LM Studio | `http://127.0.0.1:1234` | Native model discovery and chat; local managed runs can load and verify model settings. |
+| llama.cpp | `http://127.0.0.1:8080` | Uses the models served by `llama-server` through OpenAI-compatible discovery and chat. |
+| OpenAI-compatible | Your server's HTTP(S) address and optional API prefix | Requires a models list and streaming chat completions under that prefix; compatibility depends on the server. |
+
+For llama.cpp and compatible servers, start and configure the server yourself.
+The app sends benchmark requests to its available models and leaves them loaded.
+GPU offload, context allocation, parallel slots, KV cache, flash attention, and
+MTP are server settings; the app does not apply LM Studio load controls to these
+providers. Raising benchmark concurrency increases simultaneous requests, not the
+server's parallel capacity. Requests may queue inside the server.
+Both ordinary benchmarks and Agents sweeps can use these served models.
+
+LM Studio's command-line tool, runtime selection, model configuration files, and
+engine logs are local integrations. Managed loading requires LM Studio on this
+PC. To benchmark a remote server through its OpenAI-compatible API, choose the
+compatible provider and use the models it already serves.
+
+A remote endpoint receives prompts and the configured API token. Use HTTPS when
+the connection needs transport encryption. Tokens stay encrypted in local
+storage and are excluded from exports; they are still sent to the selected server
+for authentication. Model files are never downloaded by this app.
+
 ## Model compatibility
 
-There is no built-in model list or model-family allowlist. The app discovers every language model returned by the local LM Studio `/api/v1/models` endpoint each time you refresh. Install or remove models in LM Studio; no application code changes are needed for new model names, publishers, architectures, or quantizations.
+There is no built-in model list or model-family allowlist. Refresh discovers models through LM Studio's native `/api/v1/models` endpoint or the compatible `/models` endpoint under the selected API prefix (`/v1` by default). Add or remove models on that server; no application code changes are needed for new model names, publishers, architectures, or quantizations.
 
-The current backend is **LM Studio native v1**, with its CLI used to load models and verify context and parallel settings. This is a Windows desktop app, not a universal API client: Ollama, cloud providers, embeddings, image generation, and standalone Hugging Face checkpoints are not implemented backends. Vision-capable language models can take the text tests; these benchmarks do not send images.
+LM Studio native mode uses its CLI to load models and verify context and parallel settings. llama.cpp and OpenAI-compatible mode use server-managed models without local loading. Embeddings, image generation, and direct execution of standalone model checkpoints are outside these backends. Provider-specific extensions are not assumed from an OpenAI-compatible label.
+
+The following load-time features describe local LM Studio mode:
 
 - **Reasoning:** the menu shows the intersection of settings reported by the selected models. Model default sends no explicit reasoning setting and works with models that expose no reasoning control. Unsupported selections are blocked, not silently changed.
 - **Native MTP:** optional and never inferred from a model name, and covering both prediction heads built into a model file and heads shipped as a separate file with it. Several prediction depths can be measured in one run; see [Find the best MTP setting](#find-the-best-mtp-setting-190). On requires confirmed metadata for the exact model file and verified loaded settings. It currently uses LM Studio's local GGUF metadata cache; missing or stale metadata leaves support unknown. MTP requires an LM Studio/CLI runtime exposing the MTP flags and effective settings. Older runtimes may need an update even for a controlled MTP-off run.
-- **Vision mode:** `Auto` leaves LM Studio's defaults alone, `Off / text-only` sends no image, and `On` runs a deterministic local image smoke test alongside your text tests. `On` is offered only for models LM Studio positively reports as vision-capable; an unknown capability is never treated as support, and a run stops before measuring anything if the loaded model does not confirm it. LM Studio has **no** load-time option to attach or detach a vision projector — the projector belongs to the model entry itself (an `mmproj` file stored beside the GGUF), so text-only means no image is sent and never claims vision weights were unloaded. A vision-capable model stays fully usable for ordinary text benchmarks. When you want to measure the same weights with the projector left out entirely, see [Benchmark a vision model without its projector](#benchmark-a-vision-model-without-its-projector). Benchmark images are generated locally and sent as base64 data URLs. This app refuses any image that is not a local `data:image/` URL, so no image request ever leaves the machine.
+- **Vision mode:** `Auto` leaves LM Studio's defaults alone, `Off / text-only` sends no image, and `On` runs a deterministic local image smoke test alongside your text tests. `On` is offered only for models LM Studio positively reports as vision-capable; an unknown capability is never treated as support, and a run stops before measuring anything if the loaded model does not confirm it. LM Studio has **no** load-time option to attach or detach a vision projector — the projector belongs to the model entry itself (an `mmproj` file stored beside the GGUF), so text-only means no image is sent and never claims vision weights were unloaded. A vision-capable model stays fully usable for ordinary text benchmarks. When you want to measure the same weights with the projector left out entirely, see [Benchmark a vision model without its projector](#benchmark-a-vision-model-without-its-projector). Benchmark images are generated locally and sent as base64 data URLs. This app refuses any image that is not a local `data:image/` URL, so images are embedded in the request to the selected endpoint rather than fetched from an external image URL.
 - **Context and concurrency:** the app checks advertised context limits when available, then verifies actual loaded settings. Hardware limits or unsupported load options produce an explicit error rather than silently changing the experiment.
 - **Missing metadata:** models remain usable; unknown size, quantization, and capabilities are not invented. Display-only architecture/size hints can be corrected in Results and never determine whether a model may run.
 
@@ -182,6 +227,8 @@ See the [LM Studio model API](https://lmstudio.ai/docs/developer/rest/list) for 
 The Benchmarks page bundles GSM8K (1,319 questions), an IFEval supported subset (205 prompts), and CRUXEval-O JSON-compatible output prediction (750 items). Choose a question count and seed; every selected model receives the same questions. The Results side panel explains scores in plain English and checks question/protocol identity for saved-run comparisons. These are local adapted protocols, not official leaderboard scores. Full questions and checks are saved with each run.
 
 The custom test library includes 12 objective accounting tests with independently verified arithmetic. No candidate code is executed. Published source licenses are under `vendor/benchmark-licenses/`.
+
+**Berkeley email classification** adds 950 real, human-labeled Enron emails across six email-purpose categories. It uses a documented consensus subset, a strict JSON category answer, and objective accuracy plus macro-F1; no model judge is involved. Source preparation, exclusions, provenance hashes, and the practice CLI are documented in [Email benchmark](docs/email-benchmark.md). Choose it on the Benchmarks page like any other pack. **Berkeley email challenge** provides 120 complexity-selected emails balanced across those categories; its default 60-question run has ten per category and shows a category breakdown.
 
 ### Import your own pack (1.8.0)
 
@@ -398,7 +445,7 @@ prompt processing (569 tok/s to 519 tok/s). Quantizing the cache also changes wh
 the model attends to, so treat quality scores from a quantized-cache run as measured
 under that setting rather than as comparable to an f16 run.
 
-## Agent worker sweep (1.16.0)
+## Agent worker sweep (1.17.0)
 
 A token-per-second number describes the model. It does not describe what happens when you point several coding agents at one machine, because most of an agent turn is not the model call. The **Agents** page measures that directly, and it is the page to use when comparing two CPUs.
 
@@ -425,6 +472,23 @@ Each figure carries the spread measured across its own repeats. **A gap between 
 
 **Comparing two machines.** Export a sweep as **JSON** on one machine and use **Import** on the other. The imported sweep is validated field by field, stored under a fresh identifier, labelled with the machine it came from, and never re-run locally. It then appears as a dashed comparison line on the scaling chart. Sweeps recorded by a build with a different **workload version** measured different work; they are shown with a warning and left out of the comparison lines rather than plotted as if comparable.
 
+**What was measured.** A saved sweep carries a **Model under test** panel taken from LM Studio's own
+record: quantization, parameters, architecture, format, file size, the model's context limit, vision
+support, and the context and parallel slots the instance was loaded with. Anything LM Studio does not
+report stays unreported rather than being guessed from the model name, and the same facts travel into
+the CSV, the Markdown export and the HTML report.
+
+**The KV cache defaults to q4_0 for both halves, with flash attention on.** A sweep loads one instance
+with a parallel slot per worker, so the cache is the part of the memory that grows with the worker
+count — at 32 workers an f16 cache is four times the size of a q4_0 one, which is usually what decides
+whether the highest worker counts stay on the GPU. K and V can be set independently. A quantized cache
+with flash attention off is refused before the load, because llama.cpp cannot do it.
+
+**Use a model already loaded in LM Studio** is a choice beside loading one for the sweep. Nothing about
+that instance is changed — not its context, its slots or its cache — and it is left loaded afterwards.
+If the sweep asks for more workers than the instance serves at once, the run log says so: the
+flattening above that point is LM Studio's queue, not this machine's ceiling.
+
 **Model call off** runs the host side on its own. Nothing is loaded, LM Studio is not contacted, and the result is this machine's own ceiling for agent work — useful on its own and as the baseline for a run with the model call on. **Model call on** loads your selected model with one parallel slot per worker, exactly as the benchmark runner does, so the context each turn gets is the configured context and the instance is loaded with that figure multiplied by the highest worker count.
 
 ### What the host stages are, and are not
@@ -441,13 +505,30 @@ Run `npm run agents:calibrate` to print what one turn's stages cost on your mach
 
 ## Understanding the measurements
 
-- **Generation / request:** LM Studio's reported generation tokens per second for each request. Reasoning tokens are included where the server reports them.
+Compatible endpoints may provide token usage and engine timings, or neither.
+Standard OpenAI usage fields supply token counts; llama.cpp timing fields are
+used when the server supplies them.
+Unavailable measurements stay unavailable; response characters are not counted
+as tokens. Client-observed latency and time to first token include network delay,
+server queueing, and stream buffering. They are useful endpoint measurements,
+but do not isolate a remote GPU's generation speed. Server-reported timing and
+client-observed timing should not be treated as interchangeable.
+
+- **Generation / request:** The server's reported generation tokens per second for each request, where available. Reasoning tokens are included where the server reports them.
 - **Estimated prefill:** Input tokens divided by the client-observed interval between prompt-processing start and end events. Cache reuse, prompt formatting, stream buffering, and batching affect this estimate. Missing or very short timing intervals are shown as unavailable. This is not a direct measurement of uncached engine prefill speed.
 - **Total throughput:** Completed output tokens divided by the entire concurrent wave's wall-clock duration. Failed responses do not contribute output tokens; their elapsed time still affects the wave.
 - **Median and p95:** Response latency for successful requests. The p95 value is not stable with only a few samples.
 - **Warm-up:** One excluded request per loaded benchmark model. Load duration is recorded separately.
 
-Models run one at a time. Server parallel capacity stays fixed at the highest selected concurrency for the entire model sweep. LM Studio serves every parallel slot from one shared context budget, so **Context length** is the amount each concurrent request gets and the instance is loaded with that figure multiplied by the highest concurrency; the run preview shows both. Actual capacity and context length are verified after loading. Loading errors never trigger silently reduced settings. Other models already loaded in LM Studio are left alone, and may affect your benchmark.
+### Streaming and sustained load (1.19.0)
+
+In **Run → Set the pressure**, choose **Sustained concurrency** and a duration per combination to keep each selected number of requests active for that time. A completed or failed request is replaced until the deadline. Requests still running at the deadline are allowed to finish under the configured request timeout. The saved wave includes that drain time in throughput. This is fixed concurrency, not an arrival-rate or request-per-second schedule. Each combination is capped at 10,000 requests.
+
+**Sweep input context sizes** creates one deterministic performance prompt at each approximate input token target (up to eight). The app uses roughly four characters per target token; it does not have every model's tokenizer. The Results screen and exports show the endpoint's actual input token count when it supplies one. The sweep does not change an external server's context capacity. Set the server's context high enough for the longest prompt plus output, or increase the managed LM Studio context length. The per-request benchmark identifier reduces prefix reuse but does not guarantee a cold cache.
+
+The streaming table shows client-observed first output p50/p95/p99, response p99, and average/worst gaps between nonempty streamed events. An event can contain several tokens, so these gaps are **not exact inter-token latency**. Estimated milliseconds per token uses the first-to-last event span divided by the server's reported output-token count minus one; it is unavailable when events or token counts are missing. Network delay, queueing, buffering, and provider reasoning accounting still affect these measurements. Percentiles exclude failures and warm-ups and can be unstable with small samples.
+
+In local managed LM Studio mode, models run one at a time. Server parallel capacity stays fixed at the highest selected concurrency for the entire model sweep. LM Studio serves every parallel slot from one shared context budget, so **Context length** is the amount each concurrent request gets and the instance is loaded with that figure multiplied by the highest concurrency; the run preview shows both. Actual capacity and context length are verified after loading. Loading errors never trigger silently reduced settings. Other models already loaded in LM Studio are left alone, and may affect your benchmark.
 
 Custom tests use fresh conversations and reproducible leading prompt identifiers to reduce cache reuse; published benchmark prompts remain fixed. These measures do not guarantee an empty cache. Short prompts are useful for response latency. Longer performance prompts provide more useful prefill measurements. The same text can tokenize differently across models.
 
@@ -455,7 +536,8 @@ Preset defaults are editable. The run-wide output cap and each test's cap both a
 
 ## GPU thermals (1.4.0)
 
-Every run records GPU sensor readings alongside the speed measurements, so a slow result can be checked against heat rather than guessed at.
+GPU readings describe the PC running this app. They do not measure a remote inference server. When telemetry is available, local runs record it alongside speed measurements so a slow result can be checked against heat.
+Remote inference runs leave server GPU measurements unavailable.
 
 - **What is recorded:** core, hot spot, and memory temperature, board power, core load, core clock, fan speed, and memory in use.
 - **How often:** once per second for the whole run, including model loading and the idle gaps between requests.
@@ -495,7 +577,7 @@ Cancel stops scheduling new work, aborts in-flight requests, and attempts to unl
 
 ## Connection and limits
 
-The default server address is `http://127.0.0.1:1234`; only loopback addresses are accepted. Optional API tokens are encrypted with Windows storage and excluded from exports. The API server and command-line tool must control the same LM Studio service.
+The default LM Studio address is `http://127.0.0.1:1234`. Local and remote HTTP(S) origins are accepted. Put credentials in the API token field, not the URL. Optional API tokens are encrypted with Windows storage and excluded from exports. Local managed mode requires the API server and command-line tool to control the same LM Studio service. See [Choose an endpoint](#choose-an-endpoint) for provider setup.
 
 If a model fails to load, reduce the requested context, parallel capacity, or GPU offload explicitly, then try again. Because the loaded context is the per-request context times the highest concurrency, adding a higher concurrency level multiplies the memory a load needs. If a prompt exceeds context, select a shorter prompt or increase context. Large stress sweeps can exhaust available memory or take considerable time. Model judging is an evaluation aid, not an objective factual oracle.
 
@@ -509,7 +591,7 @@ Run these in order, from the root of a clone:
 git clone <this repository> local-model-bench
 cd local-model-bench
 npm ci          # installs the exact locked dependency set
-npm test        # 167 offline checks; needs nothing running
+npm test        # offline checks; needs nothing running
 npm run build   # typecheck, bundle the window, compile the main process
 npm start       # launches the app from the build you just made
 npm run package # optional: writes the NSIS installer and SHA256SUMS.txt to outputs/
@@ -528,7 +610,7 @@ optional LM Studio API token is encrypted at rest and is never sent to the
 renderer: the window is told only whether one is configured. Inference scheduling
 runs in a worker thread.
 
-As of 1.9.0 the suite is 199 tests, covering streaming fragments, timing math,
+The offline suite covers streaming fragments, timing math,
 concurrency, scoring, cancellation, loading errors, retries, SQLite recovery, the
 pooling and facet rules behind the run history overview, the update check's
 version, asset, host and checksum rules, the question-file reader and the scoring rules an imported pack
@@ -544,8 +626,10 @@ Because it is unsigned, check the installer's SHA-256 against the value publishe
 with the release before running it:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 '.\Local-Model-Bench-Setup-1.9.0.exe'
+Get-FileHash -Algorithm SHA256 '.\Local-Model-Bench-Setup-<version>.exe'
 ```
+
+Replace `<version>` with the downloaded installer's version.
 
 If the hash does not match what the release page lists, do not run it.
 
@@ -577,12 +661,12 @@ Different runs used different settings. A row that pools more than one concurren
 
 ## Updates (1.7.0)
 
-**Off unless you turn it on.** With no repository named in Settings, this app makes no outbound request of any kind, which is the state it ships in.
+**Off unless you turn it on.** With no repository named in Settings, this app makes no update requests. Inference still uses the endpoint you configure.
 
 Update checking is off until you name a repository. Enter one as `owner/name` under
 **Settings → Updates** — `M007-Net/local-model-bench` for builds of this project, or
 your own fork — and optionally tick **Check when the app starts**. Leaving the field
-empty means the app makes no outbound request at all. The app then asks `api.github.com` for that repository's latest published release, and, if the release publishes a `SHA256SUMS.txt` asset, reads that file from GitHub's release storage so the checksum is known before anything is downloaded. The only hosts it will talk to are `api.github.com` and GitHub's release storage —
+empty means the app makes no update requests. The app then asks `api.github.com` for that repository's latest published release, and, if the release publishes a `SHA256SUMS.txt` asset, reads that file from GitHub's release storage so the checksum is known before anything is downloaded. The only hosts the updater will talk to are `api.github.com` and GitHub's release storage —
 `github.com`, `objects.githubusercontent.com` and `release-assets.githubusercontent.com`.
 A release file offered from anywhere else is refused rather than downloaded. Drafts and prereleases are ignored, and a release whose tag is not a higher `MAJOR.MINOR.PATCH` than the installed version is not an update.
 
@@ -630,3 +714,15 @@ The included Windows GitHub Actions workflow runs `npm ci`, all automated tests,
 Version history is in [CHANGELOG.md](CHANGELOG.md).
 
 **Project license:** the application's own source is MIT licensed; see [LICENSE](LICENSE). Bundled third-party files are not covered by it and retain their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md). No GitHub repository is created or published by the app.
+
+### Draft probability sweep (1.19.5)
+
+Under **Engine & model loading**, enable native MTP and **Sweep spec-draft-p-min** alongside **Sweep maximum predictions**. Each on-depth is crossed with each draft probability threshold (0–1); depth 0 runs once as the MTP-off baseline. The starter thresholds are 0, 0.5, 0.7, 0.8 and 0.9. They are screening candidates, not a measured recommendation. LM Studio must explicitly report the requested threshold after each load or that combination is not measured. Results, retries, history and exports keep threshold and depth together. This replaces the experimental response-sampling profile sweep; ordinary temperature control remains. Saved measurements are preserved, with missing historical thresholds shown as unknown.
+
+### Automatically find MTP settings (1.19.6)
+
+Enable **Auto find · midpoint refinement** under native MTP. It measures MTP off once, screens the ends and middle of the selected maximum-prediction counts and draft probabilities 0, 0.5 and 1, then bisects the measured intervals around the fastest eligible settings at each concurrency level. Choose 1–4 refinement rounds (default 2). Fixed waves and at least two repeats are required. Failed, incomplete, truncated quality responses or objective scores more than one point below the baseline cannot guide refinement or be recommended. Search stops when its rounds are exhausted or no new points remain. This is a bounded search for the best observed setting for this workload, not a guarantee of the global optimum. Refinement decisions and every measured combination are saved, and retries retain the original settings.
+
+### Compare MTP settings across runs (1.19.7)
+
+In **All runs overview**, choose **Compare MTP settings**. Repeated runs at the same depth, draft threshold and workload/load settings are pooled; different settings remain separate. Gold graph outlines and the table mark the highest measured generation mean within matching conditions. Read across maximum predictions, draft probability or concurrency. The comparison choice persists after reload. Single-run graph overlays now offer saved runs of the same model and retain every distinct draft threshold. Best measured means are descriptive; inspect quality, failures and repeat spread before adopting a setting.

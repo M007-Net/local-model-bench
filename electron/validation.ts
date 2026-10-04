@@ -8,7 +8,7 @@ import {maxMtpDepth,normalizeSweep} from '../src/mtp-sweep';
 import {cacheQuants,flashOn,needsFlashAttention} from '../src/cache-quant';
 import {integer} from '../src/validate';
 export {integer} from '../src/validate';
-export function validateSettings(s:SettingsUpdate){validateUrl(s.baseUrl);integer(s.timeoutSec,1,86400,'Request timeout');integer(s.loadTimeoutSec,10,3600,'Load timeout');if(typeof s.lmsPath!=='string'||typeof s.judgePrompt!=='string'||typeof s.updateCheck!=='boolean')throw Error('Invalid settings');
+export function validateSettings(s:SettingsUpdate){if(s.provider!==undefined&&!['lmstudio','llamacpp','openai'].includes(s.provider))throw Error('Choose a supported endpoint provider.');const address=validateUrl(s.baseUrl);if((s.provider??'lmstudio')==='lmstudio'&&new URL(address).pathname!=='/')throw Error('LM Studio native mode needs a server address without an API path.');integer(s.timeoutSec,1,86400,'Request timeout');integer(s.loadTimeoutSec,10,3600,'Load timeout');if(typeof s.lmsPath!=='string'||typeof s.judgePrompt!=='string'||typeof s.updateCheck!=='boolean')throw Error('Invalid settings');
  validateLmsPath(s.lmsPath);
  if(s.judgePrompt.length>20000)throw Error('The judge prompt is too long.');
  // An empty repository is how update checking stays off: with nothing to ask, nothing is ever requested.
@@ -19,10 +19,47 @@ export function validateSettings(s:SettingsUpdate){validateUrl(s.baseUrl);intege
  // the rest of the string be read as a second header.
  if(s.token!==undefined){if(typeof s.token!=='string'||s.token.length>4096||/[\u0000-\u001f\u007f]/.test(s.token))throw Error('Invalid API token.');}}
 export function validateConfig(c:RunConfig,packs:BenchmarkPack[]=builtInPacks){
+ if(c.loadProfile!==undefined&&!['waves','sustained','arrival-rate'].includes(c.loadProfile))throw Error('Choose waves, sustained, or arrival-rate load.');
+ if(c.durationSec!==undefined)integer(c.durationSec,1,3600,'Load duration');
+ if((c.loadProfile==='sustained'||c.loadProfile==='arrival-rate')&&c.durationSec===undefined)c.durationSec=30;
+ if(c.arrivalRatePerSecond!==undefined&&(typeof c.arrivalRatePerSecond!=='number'||!Number.isFinite(c.arrivalRatePerSecond)||c.arrivalRatePerSecond<0.01||c.arrivalRatePerSecond>10000))throw Error('Target request rate must be between 0.01 and 10,000 requests per second.');
+ if(c.loadProfile==='arrival-rate'&&c.arrivalRatePerSecond===undefined)c.arrivalRatePerSecond=1;
+ if(c.latencyTargetMs!==undefined)integer(c.latencyTargetMs,1,86400000,'Latency target');
+ if(c.loadProfile==='arrival-rate'&&c.latencyTargetMs===undefined)c.latencyTargetMs=1000;
+ if(c.loadProfile==='arrival-rate'&&(c.durationSec??30)*(c.arrivalRatePerSecond??1)>10000)throw Error('Arrival-rate runs are limited to 10,000 planned requests per combination. Lower the request rate or duration.');
+ if(c.contextSweep!==undefined){
+  if(!Array.isArray(c.contextSweep)||c.contextSweep.length>8)throw Error('Use up to eight context targets.');
+  c.contextSweep.forEach(n=>integer(n,128,131072,'Approximate input tokens'));
+  c.contextSweep=[...new Set(c.contextSweep)].sort((a,b)=>a-b);
+ }
+ if(c.cacheProtocol!==undefined&&!['cold-prompt','cached-prefix-followup','total-context'].includes(c.cacheProtocol))throw Error('Choose a supported cache protocol.');
+ if(c.contextTolerancePct!==undefined&&(typeof c.contextTolerancePct!=='number'||!Number.isFinite(c.contextTolerancePct)||c.contextTolerancePct<1||c.contextTolerancePct>25))throw Error('Input tolerance must be 1–25%.');
+ if(c.cachePrefixTokens!==undefined)integer(c.cachePrefixTokens,64,32768,'Cached prefix target');
+ if(c.cacheProtocol==='cached-prefix-followup'&&!c.contextSweep?.length)throw Error('Choose input target sizes before using the cached-prefix protocol.');
+ if(c.cacheProtocol==='cached-prefix-followup'&&(c.loadProfile??'waves')!=='waves')throw Error('Cached-prefix follow-ups currently require fixed request waves so cache priming stays outside measured throughput.');
+ if(c.cacheProtocol==='cached-prefix-followup'&&c.contextSweep?.some(n=>(c.cachePrefixTokens??512)>=n))throw Error('The cached prefix must be shorter than every total input target.');
+ if((c.loadProfile==='sustained'||c.loadProfile==='arrival-rate'||c.contextSweep?.length)&&c.mode!=='performance')throw Error('Choose speed-only mode for sustained or arrival-rate load or a context sweep.');
+ if((c.loadProfile==='sustained'||c.loadProfile==='arrival-rate'||c.contextSweep?.length)&&c.vision==='on')throw Error('Context and load-profile performance sweeps use text prompts. Turn vision off.');
  if(c.benchmark){validateBenchmark(c.benchmark,packs);if(c.mode==='performance')throw Error('Choose quality or combined mode for a benchmark pack.');}
  if(c.vision!==undefined&&!['auto','off','on'].includes(c.vision))throw Error('Invalid vision mode');
  if(c.mtp!==undefined&&!['off','on'].includes(c.mtp))throw Error('Invalid MTP mode');
  if(c.mtpDraftTokens!==undefined)integer(c.mtpDraftTokens,1,8,'MTP draft tokens');
+ const probability=(n:unknown)=>{if(typeof n!=='number'||!Number.isFinite(n)||n<0||n>1)throw Error('Minimum draft probability must be between 0 and 1.');};
+ if(c.mtpDraftPMin!==undefined)probability(c.mtpDraftPMin);
+ if(c.mtpPMinSweep!==undefined){
+  if(c.mtp!=='on')throw Error('Turn native MTP on before sweeping minimum draft probability.');
+  if(!Array.isArray(c.mtpPMinSweep)||!c.mtpPMinSweep.length||c.mtpPMinSweep.length>8)throw Error('Use one to eight minimum draft probabilities.');
+  c.mtpPMinSweep.forEach(probability);c.mtpPMinSweep=[...new Set(c.mtpPMinSweep)].sort((a,b)=>a-b);
+ }
+ if(c.mtpAutoFind!==undefined&&typeof c.mtpAutoFind!=='boolean')throw Error('Invalid MTP auto-find setting.');
+ if(c.mtpAutoRounds!==undefined)integer(c.mtpAutoRounds,1,4,'MTP refinement rounds');
+ if(c.mtpAutoFind){
+  if(c.mtp!=='on')throw Error('Turn native MTP on before using auto find.');
+  if((c.loadProfile??'waves')!=='waves')throw Error('MTP auto find requires fixed waves for comparable measurements.');
+  if(c.waves<2)throw Error('MTP auto find requires at least two waves.');
+  if(c.mtpPMinSweep!==undefined)throw Error('Choose auto find or a manual draft-probability sweep.');
+  if(c.mtpSweep!==undefined&&!c.mtpSweep.some(d=>d>0))throw Error('Auto find needs at least one positive maximum prediction count.');
+ }
  if(c.mtpPreflight!==undefined&&typeof c.mtpPreflight!=='boolean')throw Error('Invalid MTP preflight setting');
  // A sweep reloads the model once per depth and repeats the whole workload, so the depths are
  // normalized here: the run preview, the request count and the engine all read the same list.
