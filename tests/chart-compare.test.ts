@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import {backendOf,unknownBackend} from '../electron/runtime';
 import {backendRows,comparableBackends,overlayId,overlayOptions,overlayRows,stillOffered} from '../src/chart-compare';
 import type {HistoryRow} from '../src/history';
+test('saved overlays keep thresholds and repeated runs of the same model distinct',()=>{
+ const history=[row({runId:'old',mtp:'on',mtpDepth:2,mtpPMin:0}),row({runId:'old',mtp:'on',mtpDepth:2,mtpPMin:.8}),row({runId:'repeat',mtp:'on',mtpDepth:2,mtpPMin:.8})];
+ const options=overlayOptions(history,'r1','perf-short','Vulkan',['gemma@q4']);
+ assert.equal(options.filter(o=>o.kind==='run').length,2);
+ const overlays=overlayRows(history,[overlayId('run','old'),overlayId('run','repeat')],'r1','perf-short',['gemma@q4']);
+ assert.equal(overlays.length,3);
+ assert.equal(new Set(overlays.map(r=>r.modelKey)).size,2);
+});
 
 const row=(patch:Partial<HistoryRow>):HistoryRow=>({
  runId:'r1',runName:'run',runCreated:'2026-09-10T00:00:00.000Z',runStatus:'completed',

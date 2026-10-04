@@ -9,7 +9,7 @@ import {calibrationFor} from '../src/prefill';
 // came from, what the model was, and the counts and durations behind each average.
 // The MTP depth is part of the key for the same reason it is part of a summary row: one run can
 // hold several depths, and pooling them would average a setting against itself.
-const groupKey=(s:Pick<Sample,'modelKey'|'testId'|'concurrency'>,depth:number|null)=>JSON.stringify([s.modelKey,s.testId,s.concurrency,depth]);
+const groupKey=(s:Pick<Sample,'modelKey'|'testId'|'concurrency'> & {mtpPMin?:number|null},depth:number|null)=>JSON.stringify([s.modelKey,s.testId,s.concurrency,depth,s.mtpPMin??null]);
 export function historyRows(runs:Run[],saved:Record<string,ModelProfile>):HistoryRow[]{
  return runs.flatMap(run=>{
   const profiles=profilesFor(run,[],saved);
@@ -31,9 +31,9 @@ export function historyRows(runs:Run[],saved:Record<string,ModelProfile>):Histor
     publisher:typeof model?.publisher==='string'?model.publisher:'',architecture:String(model?.architecture??''),
     promptSize:promptSizeOf(r.testId),testKind:test?.kind??'quality',benchmarkPack:test?.benchmark?.packId??null,
     backend:backend.label,backendRef:backend.ref,
-    prefillCalibratedTps:calibrationFor(run,r.modelKey,r.mtpDepth)?.marginalTps??null,
-    prefillOverheadMs:calibrationFor(run,r.modelKey,r.mtpDepth)?.overheadMs??null,
-    reasoning:run.config.reasoning,temperature:run.config.temperature,contextLength:run.config.contextLength,
+    prefillCalibratedTps:calibrationFor(run,r.modelKey,r.mtpDepth,r.mtpPMin)?.marginalTps??null,
+    prefillOverheadMs:calibrationFor(run,r.modelKey,r.mtpDepth,r.mtpPMin)?.overheadMs??null,
+    cacheK:run.config.cacheK??'unknown',cacheV:run.config.cacheV??'unknown',flashAttention:run.config.flashAttention??'unknown',gpu:run.config.gpu,reasoning:run.config.reasoning,temperature:run.config.temperature,contextLength:run.config.contextLength,
     maxTokens:run.config.maxTokens,waves:run.config.waves,
     completed:ok.length,durationsMs:ok.map(s=>s.metrics.durationMs).filter(n=>Number.isFinite(n)),
     objectiveCount:ok.filter(s=>s.objective.score!==null).length,

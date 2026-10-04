@@ -1,6 +1,6 @@
 import type { summaries } from '../electron/export';
 import type { GpuTick } from './types';
-export type ChartRow = ReturnType<typeof summaries>[number];
+export type ChartRow = ReturnType<typeof summaries>[number] & {bestObserved?:boolean;runLabel?:string;seriesId?:string};
 export type ScoreSource = 'objective'|'localJudge'|'externalJudge';
 export const scoreLabels:Record<ScoreSource,string>={objective:'Objective score',localJudge:'Local judge score',externalJudge:'External review score'};
 export const escapeHtml=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -11,10 +11,10 @@ export type ChartSpec={key:Metric|'scatter';title:string;unit:string;description
 // What the horizontal axis counts. Concurrency is the historical answer and stays the default, but
 // an MTP sweep at a single concurrency level has nothing to spread along it: every depth lands on
 // the same x and the series stack on one vertical line. Depth is the axis that run varies.
-export type XAxis='concurrency'|'mtpDepth';
-export const xAxisLabels:Record<XAxis,string>={concurrency:'Concurrent requests',mtpDepth:'Maximum predictions (0 = MTP off)'};
+export type XAxis='concurrency'|'mtpDepth'|'mtpPMin';
+export const xAxisLabels:Record<XAxis,string>={mtpPMin:'Minimum draft probability',concurrency:'Concurrent requests',mtpDepth:'Maximum predictions (0 = MTP off)'};
 // A row from a run that measured no depth sits at 0, which is where "MTP off" belongs anyway.
-export const xValueOf=(r:ChartRow,axis:XAxis):number=>axis==='mtpDepth'?(r.mtpDepth??0):r.concurrency;
+export const xValueOf=(r:ChartRow,axis:XAxis):number=>axis==='mtpPMin'?(r.mtpPMin??0):axis==='mtpDepth'?(r.mtpDepth??0):r.concurrency;
 // Which axis a run should open on, before anyone chooses. A run that swept depths at a single
 // concurrency level varied exactly one thing, and it is not concurrency: opening on that axis puts
 // every depth at the same x and hides the run's whole subject behind a stack of points.
@@ -49,18 +49,22 @@ export function renderChart(rows:ChartRow[],spec:ChartSpec,score:ScoreSource='ob
  const ticks=scatter?[0,.25,.5,.75,1].map(t=>t*xMax):allXs.filter((_,i)=>allXs.length<=8||i===allXs.length-1||i%Math.ceil(allXs.length/7)===0);
  for(const t of ticks)svg+=`<text x="${x(t)}" y="250" text-anchor="middle">${fmt(t)}</text>`;
  svg+=`<text x="320" y="278" text-anchor="middle">${scatter?'Generation tokens / second':xAxisLabels[xAxis]}</text>`;
- const keys=[...new Set(rows.map(r=>r.modelKey))].sort();
+ const seriesKey=(r:ChartRow)=>chartSeriesKey(r,xAxis);
+ const keys=[...new Set(rows.map(seriesKey))].sort();
  keys.forEach((key,i)=>{
-  const rs=rows.filter(r=>r.modelKey===key).sort((a,b)=>xValueOf(a,xAxis)-xValueOf(b,xAxis)),color=colorFor(key);
+  const rs=rows.filter(r=>seriesKey(r)===key).sort((a,b)=>xValueOf(a,xAxis)-xValueOf(b,xAxis)),color=colorFor(key);
   let segment:string[]=[];
   const flush=()=>{if(segment.length>1)svg+=`<polyline points="${segment.join(' ')}" fill="none" stroke="${color}" stroke-width="2.5" ${i%2?'stroke-dasharray="7 3"':''}/>`;segment=[];};
   if(!scatter&&connectPoints){for(const r of rs){const v=val(r);if(v===null){flush();continue;}segment.push(`${x(xValueOf(r,xAxis))},${y(v)}`);}flush();}
-  for(const r of rs){const v=val(r);if(v===null||(scatter&&r.generationTps===null))continue;const cx=x(scatter?r.generationTps!:xValueOf(r,xAxis)),cy=y(v);const title=`${r.modelKey} • ${xAxis==='mtpDepth'?(r.mtpDepth?`${r.mtpDepth} draft token${r.mtpDepth===1?'':'s'}`:'MTP off')+` • concurrency ${r.concurrency}`:`concurrency ${r.concurrency}`} • ${scatter?fmt(r.generationTps!)+' tok/s • ':''}${fmt(v)} ${scatter?'score':spec.unit} • ${r.requests} requests, ${r.failures} failures`;
-   svg+=`<circle class="point" cx="${cx}" cy="${cy}" r="${scatter?6:4.5}" fill="${color}" stroke="#141c20" stroke-width="1.5" tabindex="0" role="button" data-model="${escapeHtml(r.modelKey)}" data-concurrency="${r.concurrency}" data-mtp-depth="${r.mtpDepth??''}" data-tooltip="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title></circle>`;
+  for(const r of rs){const v=val(r);if(v===null||(scatter&&r.generationTps===null))continue;const cx=x(scatter?r.generationTps!:xValueOf(r,xAxis)),cy=y(v);const title=`${r.modelKey}${r.mtpPMin==null?'':' / p-min '+r.mtpPMin} • ${xAxis==='mtpDepth'?(r.mtpDepth?`${r.mtpDepth} draft token${r.mtpDepth===1?'':'s'}`:'MTP off')+` • concurrency ${r.concurrency}`:`concurrency ${r.concurrency}`} • ${scatter?fmt(r.generationTps!)+' tok/s • ':''}${fmt(v)} ${scatter?'score':spec.unit} • ${r.requests} requests, ${r.failures} failures${r.runLabel?' • '+r.runLabel:''}${r.bestObserved?' • Best measured generation mean':''}`;
+   svg+=`<circle class="point" cx="${cx}" cy="${cy}" r="${scatter?6:4.5}" fill="${color}" stroke="${r.bestObserved?'#ffd166':'#141c20'}" stroke-width="${r.bestObserved?4:1.5}" data-best-measured="${!!r.bestObserved}" tabindex="0" role="button" data-model="${escapeHtml(r.modelKey)}" data-concurrency="${r.concurrency}" data-mtp-depth="${r.mtpDepth??''}" data-tooltip="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title></circle>`;
   }
  });return svg+'</svg>';
 }
-export function legendHtml(rows:ChartRow[]){return [...new Set(rows.map(r=>r.modelKey))].sort().map(key=>`<span><i style="background:${colorFor(key)}"></i>${escapeHtml(key)}</span>`).join('');}
+export function chartSeriesKey(r:ChartRow,axis:XAxis='concurrency'){
+ return (r.seriesId??r.modelKey)+(r.mtp==='off'?' / MTP off':(axis!=='mtpDepth'&&r.mtpDepth!=null?' / '+r.mtpDepth+' draft tokens':'')+(axis!=='mtpPMin'&&r.mtpPMin!=null?' / p-min '+r.mtpPMin:''));
+}
+export function legendHtml(rows:ChartRow[],axis:XAxis='concurrency'){return [...new Set(rows.map(r=>chartSeriesKey(r,axis)))].sort().map(key=>{const r=rows.find(r=>chartSeriesKey(r,axis)===key)!;const label=chartSeriesKey({...r,seriesId:undefined},axis);return `<span><i style="background:${colorFor(key)}"></i>${escapeHtml(label)}</span>`;}).join('');}
 
 export const gpuSeriesColors:Record<string,string>={tempHotSpot:'hsl(14, 78%, 68%)',tempCore:'hsl(192, 72%, 66%)',tempMemory:'hsl(276, 58%, 74%)',load:'hsl(152, 45%, 62%)'};
 // Temperatures and core load share one 0-100 axis: both are percentages of a comparable ceiling,

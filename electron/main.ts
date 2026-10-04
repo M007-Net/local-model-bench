@@ -166,7 +166,7 @@ function launch(run:Run,retries?:Sample[],gradeOnly=false){assertIdle();activeRu
 }
 async function newRun(config:RunConfig,retries?:Sample[],source?:Run){
  assertIdle();
- if(!isManagedEndpoint(settings()))config={...config,mtp:undefined,mtpSweep:undefined,mtpPreflight:undefined,mtpDraftTokens:undefined,runtime:undefined,cacheK:undefined,cacheV:undefined,flashAttention:undefined,gpu:'auto',reasoning:'default',vision:undefined};
+ if(!isManagedEndpoint(settings()))config={...config,mtp:undefined,mtpSweep:undefined,mtpDraftPMin:undefined,mtpPMinSweep:undefined,mtpAutoFind:undefined,mtpAutoRounds:undefined,mtpPreflight:undefined,mtpDraftTokens:undefined,runtime:undefined,cacheK:undefined,cacheV:undefined,flashAttention:undefined,gpu:'auto',reasoning:'default',vision:undefined};
  else if(!canManageLocally(settings()))throw Error('Choose OpenAI-compatible for remote LM Studio benchmarks. Local model management cannot control that server.');
  validateConfig(config,allPacks());const models=await listModels(settings());for(const key of config.modelKeys)if(!models.some(m=>m.key===key))throw Error('Selected model no longer available: '+key);
  if(config.contextSweep?.length){

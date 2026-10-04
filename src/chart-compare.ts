@@ -1,6 +1,6 @@
 import type {ChartRow} from './charts';
 import type {HistoryRow} from './history';
-import {shortDate,unknownFacet} from './history';
+import {mtpCohort,shortDate,unknownFacet} from './history';
 import {unknownBackend} from '../electron/runtime';
 
 // Putting saved measurements beside the run you are looking at.
@@ -13,7 +13,7 @@ import {unknownBackend} from '../electron/runtime';
 // Nothing here recomputes a measurement. Every overlaid point is a saved row from a finished run,
 // relabelled so the legend says where it came from.
 
-export type OverlayKind='backend'|'model';
+export type OverlayKind='backend'|'model'|'run';
 export type OverlayOption={id:string;kind:OverlayKind;label:string;detail:string;points:number};
 
 export const overlayId=(kind:OverlayKind,value:string)=>`${kind}:${value}`;
@@ -21,7 +21,7 @@ const parseId=(id:string):{kind:OverlayKind;value:string}|null=>{
  const at=id.indexOf(':');
  if(at<0)return null;
  const kind=id.slice(0,at);
- return kind==='backend'||kind==='model'?{kind,value:id.slice(at+1)}:null;
+ return kind==='backend'||kind==='model'||kind==='run'?{kind,value:id.slice(at+1)}:null;
 };
 
 // One saved row per (model, test, concurrency, depth). Several runs can hold the same combination,
@@ -30,7 +30,7 @@ const parseId=(id:string):{kind:OverlayKind;value:string}|null=>{
 function newestPerPoint(rows:HistoryRow[]):HistoryRow[]{
  const best=new Map<string,HistoryRow>();
  for(const r of rows){
-  const key=JSON.stringify([r.modelKey,r.testId,r.concurrency,r.mtpDepth]);
+  const key=JSON.stringify([mtpCohort(r),r.mtpDepth,r.mtpPMin??null]);
   const prior=best.get(key);
   if(!prior||Date.parse(r.runCreated)>Date.parse(prior.runCreated))best.set(key,r);
  }
@@ -54,6 +54,9 @@ export function overlayOptions(history:HistoryRow[],runId:string,testId:string,c
   out.push({id:overlayId('backend',label),kind:'backend',label:`Compare with ${label}`,
    detail:`${[...new Set(points.map(p=>p.modelKey))].length} of this run's model(s), measured on ${label}`,points:points.length});
  }
+ const sameRuns=new Map<string,HistoryRow[]>();
+ for(const r of elsewhere)if(models.has(r.modelKey)&&r.backend===currentBackend)sameRuns.set(r.runId,[...(sameRuns.get(r.runId)??[]),r]);
+ for(const [id,rs] of sameRuns)out.push({id:overlayId('run',id),kind:'run',label:rs[0].runName||'Saved run',detail:shortDate(rs[0].runCreated)+' · '+rs[0].backend,points:newestPerPoint(rs).length});
  const others=new Map<string,HistoryRow[]>();
  for(const r of elsewhere){
   if(models.has(r.modelKey))continue;
@@ -78,9 +81,9 @@ export function overlayRows(history:HistoryRow[],ids:string[],runId:string,testI
   const parsed=parseId(id);
   if(!parsed)continue;
   const matching=history.filter(r=>r.runId!==runId&&r.testId===testId&&(
-   parsed.kind==='backend'?r.backend===parsed.value&&models.has(r.modelKey):r.modelKey===parsed.value));
+   parsed.kind==='backend'?r.backend===parsed.value&&models.has(r.modelKey):parsed.kind==='run'?r.runId===parsed.value:r.modelKey===parsed.value));
   for(const r of newestPerPoint(matching))
-   out.push({...r,modelKey:`${r.modelKey} · ${r.backend===unknownBackend?shortDate(r.runCreated):r.backend}`});
+   out.push({...r,modelKey:`${r.modelKey} · ${parsed.kind==='run'?(r.runName||'Saved run')+' · '+shortDate(r.runCreated)+' · '+r.runId.slice(0,8):r.backend===unknownBackend?shortDate(r.runCreated):r.backend}`});
  }
  return out;
 }

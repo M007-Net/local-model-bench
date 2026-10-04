@@ -1,15 +1,21 @@
 import data from './benchmark-data/packs.json';
+import emailData from './benchmark-data/berkeley-enron.json';
+import emailChallengeData from './benchmark-data/berkeley-enron-challenge.json';
+import {balancedEmailSelection,emailChallengeId} from './email-challenge';
+import {emailMetrics} from './email-classification';
 import type {Run, RunConfig, TestCase} from './types';
-import {mtpDepthText,sweepSteps} from './mtp-sweep';
+import {mtpDepthText,autoMeasuredSteps,sweepSteps} from './mtp-sweep';
 
 export type BenchmarkSelection={packId:string;count:number;seed:number};
 export type BenchmarkMeta={packId:string;itemId:string;datasetHash:string;protocol:string};
 export type BenchmarkPack={id:string;source:string;datasetHash:string;protocol:string;originalCount:number;count:number;tests:TestCase[];name?:string;scoring?:string;instruction?:string;custom?:boolean;imported?:string;fileName?:string};
 // What a screen needs to describe a pack without carrying its questions across the process boundary.
 export type PackSummary={id:string;name:string;skill:string;meaning:string;limit:string;protocol:string;source:string;datasetHash:string;originalCount:number;count:number;custom:boolean};
-export const builtInPacks=data as unknown as BenchmarkPack[];
+export const builtInPacks=[...data,emailData,emailChallengeData] as unknown as BenchmarkPack[];
 export const benchmarkPacks=builtInPacks;
 export const benchmarkDescriptions:Record<string,{name:string;skill:string;meaning:string;limit:string;protocol:string}>={
+ 'berkeley-enron-challenge':{name:'Berkeley email challenge',skill:'Email purpose across difficult contexts',meaning:'Can it distinguish all six email purposes in longer messages and threaded conversations? Each category has equal representation.',limit:'Complexity is selected from text length and quoted-thread markers, not model mistakes. These are still consensus human labels. This selected challenge set is not representative of a normal inbox.',protocol:'120 real emails: 20 per category, selected by a fixed complexity rule and deduplicated. Seeded round-robin selection keeps category counts within one of each other. Accuracy, six-category macro-F1, per-category scores and confusion counts; no model judge.'},
+ 'berkeley-enron':{name:'Berkeley email classification',skill:'Understanding email purpose',meaning:'Can it classify a real email as business, personal, professional relationships, logistics, employment, or document collaboration?',limit:'This is a historical Enron corpus with imperfect human annotations. Only full emails up to 16,000 characters with one nonempty genre and at least two agreeing annotation votes are included. It does not test urgency, spam, action extraction, or modern inbox generalization.',protocol:'UC Berkeley annotated emails; local zero-shot JSON classification. Accuracy and macro-F1 across all six categories (absent categories score zero). No model judge; malformed answers and request failures count as misses.'},
  gsm8k:{name:'GSM8K',skill:'Math word problems',meaning:'Can it turn a short story problem into the right calculation and final answer?',limit:'This tests numerical word problems. It does not establish advanced math ability or explain whether the reasoning was sound.',protocol:'Published test questions; local zero-shot prompt and final-number scoring.'},
  ifeval:{name:'IFEval',skill:'Following instructions',meaning:'Can it follow specific rules such as the number of bullets, required words, JSON format, or a required ending?',limit:'This checks stated constraints, not factual correctness or good writing. The included subset covers 11 supported instruction types.',protocol:'Published prompts unchanged; 205 of 541 prompts with supported constraints. Local strict-style, all-constraints scoring; no loose variant.'},
  cruxeval:{name:'CRUXEval-O',skill:'Understanding Python code',meaning:'Can it read a short Python function and predict the value it returns for a given input?',limit:'This measures code reading and tracing. Even 100 does not mean it can build, debug, or maintain a whole application.',protocol:'Published functions and inputs; 750 of 800 items with JSON-representable outputs. Local JSON answer format; no code execution.'}
@@ -36,12 +42,14 @@ export function validateBenchmark(selection:BenchmarkSelection,packs:BenchmarkPa
 // item IDs, and a larger run with the same seed includes the smaller run's items.
 export function selectBenchmark(selection:BenchmarkSelection,packs:BenchmarkPack[]=builtInPacks):TestCase[]{
  const pack=validateBenchmark(selection,packs),items=[...pack.tests];let seed=selection.seed>>>0;
+ if(pack.id===emailChallengeId)return balancedEmailSelection(items,seed,selection.count);
  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
  for(let i=items.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[items[i],items[j]]=[items[j],items[i]];}
  return structuredClone(items.slice(0,selection.count));
 }
 export function benchmarkConfig(current:RunConfig,selection:BenchmarkSelection,packName:string):RunConfig{
- return {...current,benchmark:selection,name:`${packName} · ${selection.count} questions`,mode:'quality',testIds:[],preset:'Custom',concurrency:[1],waves:1,maxTokens:2048,contextLength:Math.max(current.contextLength,8192),temperature:0,judgeModel:''};
+ const challenge=selection.packId===emailChallengeId;
+ return {...current,benchmark:selection,name:`${packName} · ${selection.count} questions`,mode:'quality',testIds:[],preset:'Custom',concurrency:[1],waves:1,maxTokens:challenge?8192:2048,contextLength:Math.max(current.contextLength,challenge?16384:8192),timeoutSec:challenge?Math.max(current.timeoutSec,600):current.timeoutSec,temperature:0,judgeModel:''};
 }
 // A published pack has a hand-written explanation; an imported one is described from what was imported, so the
 // meaning panel never has to guess what your own questions measure.
@@ -74,14 +82,15 @@ export function benchmarkRows(run:Run){
  // An MTP sweep runs the whole pack once per prediction depth, so a depth is a separate score
  // with its own expected question count. Runs that did not sweep have a single depth of null,
  // which matches every response and leaves their rows exactly as they were.
- const depths=sweepSteps(run.config).map(s=>s.depth);
- return run.config.modelKeys.flatMap(key=>depths.flatMap(depth=>run.config.concurrency.map(concurrency=>{
-  const samples=run.samples.filter(s=>!s.warmup&&s.modelKey===key&&s.concurrency===concurrency&&ids.has(s.testId)&&(depth===null||s.mtpTokens===depth));
+ const steps=run.config.mtpAutoFind?autoMeasuredSteps(run.samples):sweepSteps(run.config);
+ return run.config.modelKeys.flatMap(key=>steps.flatMap(step=>run.config.concurrency.map(concurrency=>{
+  const depth=step.depth;const samples=run.samples.filter(s=>!s.warmup&&s.modelKey===key&&s.concurrency===concurrency&&(s.mtpPMin??null)===(step.pMin??null)&&ids.has(s.testId)&&(depth===null||s.mtpTokens===depth));
   const passed=samples.filter(s=>s.status==='completed'&&s.objective.score===100).length;
   const failed=samples.filter(s=>s.status!=='completed').length;
   const expected=tests.length*run.config.waves*concurrency;
   const score=samples.length?passed/samples.length*100:null;
-  return {key,concurrency,depth,mtp:mtpDepthText(depth),passed,attempted:samples.length,expected,failed,score,provisional:samples.length!==expected||run.status!=='completed',truncated:samples.filter(s=>s.possibleTruncation).length,uniqueQuestions:new Set(samples.map(s=>s.testId)).size};
+  const classification=tests.every(t=>['berkeley-enron',emailChallengeId].includes(t.benchmark?.packId??''))?emailMetrics(samples,tests):undefined;
+  return {pMin:step.pMin??null,key,concurrency,depth,mtp:mtpDepthText(depth)+(step.pMin===undefined?'':' · draft p-min '+step.pMin),passed,attempted:samples.length,expected,failed,score,classification,provisional:samples.length!==expected||run.status!=='completed',truncated:samples.filter(s=>s.possibleTruncation).length,uniqueQuestions:new Set(samples.map(s=>s.testId)).size};
  })));
 }
 export function sameBenchmarkQuestions(a:Run,b:Run){

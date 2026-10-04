@@ -96,13 +96,14 @@ export const prefillText=(c:PrefillCalibration|null|undefined):string=>
 // The key a calibration is stored under. mtpDepthText, never 'MTP ' + mtpDepthLabel: the label for
 // depth 0 is already 'MTP off', so the shorter form spells 'MTP MTP off' — the same trap the sweep
 // labels carry a warning about.
-export const calibrationKey=(modelKey:string,depth:number|null):string=>
- depth===null?`prefill:${modelKey}`:`prefill:${modelKey} · ${mtpDepthText(depth)}`;
+export const calibrationKey=(modelKey:string,depth:number|null,pMin?:number|null):string=>
+ (depth===null?`prefill:${modelKey}`:`prefill:${modelKey} · ${mtpDepthText(depth)}`)+(pMin==null?'':` · p-min ${pMin}`);
 // Runs saved before that was fixed used 'MTP ' + the label, doubling the prefix at depth 0. They are
 // still read, because a key format is not worth losing a finished run's measurements over.
 const legacyKey=(modelKey:string,depth:number):string=>`prefill:${modelKey} · MTP ${mtpDepthLabel(depth)}`;
-export function calibrationFor(run:Run,modelKey:string,depth:number|null):PrefillCalibration|null{
+export function calibrationFor(run:Run,modelKey:string,depth:number|null,pMin?:number|null):PrefillCalibration|null{
  const info=run.modelInfo as Record<string,unknown>;
+ if(pMin!=null){const value=info[calibrationKey(modelKey,depth,pMin)];return value&&typeof value==='object'&&'marginalTps' in value?value as PrefillCalibration:null;}
  const candidates=depth===null?[]:[calibrationKey(modelKey,depth),legacyKey(modelKey,depth)];
  // The undepthed key last: a run with no sweep stores exactly one calibration under it.
  for(const key of [...candidates,`prefill:${modelKey}`]){

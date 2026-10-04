@@ -44,6 +44,22 @@ export function validateConfig(c:RunConfig,packs:BenchmarkPack[]=builtInPacks){
  if(c.vision!==undefined&&!['auto','off','on'].includes(c.vision))throw Error('Invalid vision mode');
  if(c.mtp!==undefined&&!['off','on'].includes(c.mtp))throw Error('Invalid MTP mode');
  if(c.mtpDraftTokens!==undefined)integer(c.mtpDraftTokens,1,8,'MTP draft tokens');
+ const probability=(n:unknown)=>{if(typeof n!=='number'||!Number.isFinite(n)||n<0||n>1)throw Error('Minimum draft probability must be between 0 and 1.');};
+ if(c.mtpDraftPMin!==undefined)probability(c.mtpDraftPMin);
+ if(c.mtpPMinSweep!==undefined){
+  if(c.mtp!=='on')throw Error('Turn native MTP on before sweeping minimum draft probability.');
+  if(!Array.isArray(c.mtpPMinSweep)||!c.mtpPMinSweep.length||c.mtpPMinSweep.length>8)throw Error('Use one to eight minimum draft probabilities.');
+  c.mtpPMinSweep.forEach(probability);c.mtpPMinSweep=[...new Set(c.mtpPMinSweep)].sort((a,b)=>a-b);
+ }
+ if(c.mtpAutoFind!==undefined&&typeof c.mtpAutoFind!=='boolean')throw Error('Invalid MTP auto-find setting.');
+ if(c.mtpAutoRounds!==undefined)integer(c.mtpAutoRounds,1,4,'MTP refinement rounds');
+ if(c.mtpAutoFind){
+  if(c.mtp!=='on')throw Error('Turn native MTP on before using auto find.');
+  if((c.loadProfile??'waves')!=='waves')throw Error('MTP auto find requires fixed waves for comparable measurements.');
+  if(c.waves<2)throw Error('MTP auto find requires at least two waves.');
+  if(c.mtpPMinSweep!==undefined)throw Error('Choose auto find or a manual draft-probability sweep.');
+  if(c.mtpSweep!==undefined&&!c.mtpSweep.some(d=>d>0))throw Error('Auto find needs at least one positive maximum prediction count.');
+ }
  if(c.mtpPreflight!==undefined&&typeof c.mtpPreflight!=='boolean')throw Error('Invalid MTP preflight setting');
  // A sweep reloads the model once per depth and repeats the whole workload, so the depths are
  // normalized here: the run preview, the request count and the engine all read the same list.

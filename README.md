@@ -228,6 +228,8 @@ The Benchmarks page bundles GSM8K (1,319 questions), an IFEval supported subset 
 
 The custom test library includes 12 objective accounting tests with independently verified arithmetic. No candidate code is executed. Published source licenses are under `vendor/benchmark-licenses/`.
 
+**Berkeley email classification** adds 950 real, human-labeled Enron emails across six email-purpose categories. It uses a documented consensus subset, a strict JSON category answer, and objective accuracy plus macro-F1; no model judge is involved. Source preparation, exclusions, provenance hashes, and the practice CLI are documented in [Email benchmark](docs/email-benchmark.md). Choose it on the Benchmarks page like any other pack. **Berkeley email challenge** provides 120 complexity-selected emails balanced across those categories; its default 60-question run has ten per category and shows a category breakdown.
+
 ### Import your own pack (1.8.0)
 
 **Import a pack** on the Benchmarks page turns a file of your own questions into a pack that behaves exactly like the published ones: same seeded question selection, same count and seed, same automatic scoring, same Results panel, and the same pooling in the run history overview.
@@ -712,3 +714,15 @@ The included Windows GitHub Actions workflow runs `npm ci`, all automated tests,
 Version history is in [CHANGELOG.md](CHANGELOG.md).
 
 **Project license:** the application's own source is MIT licensed; see [LICENSE](LICENSE). Bundled third-party files are not covered by it and retain their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md). No GitHub repository is created or published by the app.
+
+### Draft probability sweep (1.19.5)
+
+Under **Engine & model loading**, enable native MTP and **Sweep spec-draft-p-min** alongside **Sweep maximum predictions**. Each on-depth is crossed with each draft probability threshold (0–1); depth 0 runs once as the MTP-off baseline. The starter thresholds are 0, 0.5, 0.7, 0.8 and 0.9. They are screening candidates, not a measured recommendation. LM Studio must explicitly report the requested threshold after each load or that combination is not measured. Results, retries, history and exports keep threshold and depth together. This replaces the experimental response-sampling profile sweep; ordinary temperature control remains. Saved measurements are preserved, with missing historical thresholds shown as unknown.
+
+### Automatically find MTP settings (1.19.6)
+
+Enable **Auto find · midpoint refinement** under native MTP. It measures MTP off once, screens the ends and middle of the selected maximum-prediction counts and draft probabilities 0, 0.5 and 1, then bisects the measured intervals around the fastest eligible settings at each concurrency level. Choose 1–4 refinement rounds (default 2). Fixed waves and at least two repeats are required. Failed, incomplete, truncated quality responses or objective scores more than one point below the baseline cannot guide refinement or be recommended. Search stops when its rounds are exhausted or no new points remain. This is a bounded search for the best observed setting for this workload, not a guarantee of the global optimum. Refinement decisions and every measured combination are saved, and retries retain the original settings.
+
+### Compare MTP settings across runs (1.19.7)
+
+In **All runs overview**, choose **Compare MTP settings**. Repeated runs at the same depth, draft threshold and workload/load settings are pooled; different settings remain separate. Gold graph outlines and the table mark the highest measured generation mean within matching conditions. Read across maximum predictions, draft probability or concurrency. The comparison choice persists after reload. Single-run graph overlays now offer saved runs of the same model and retain every distinct draft threshold. Best measured means are descriptive; inspect quality, failures and repeat spread before adopting a setting.

@@ -24,16 +24,68 @@ export function normalizeSweep(values:unknown):number[]{
  return [...new Set(values.filter((n):n is number=>typeof n==='number'&&Number.isInteger(n)&&n>=0&&n<=maxMtpDepth))].sort((a,b)=>a-b);
 }
 
-export type MtpConfig={mtp?:'off'|'on';mtpDraftTokens?:number;mtpSweep?:number[]};
-export type MtpStep={depth:number|null;mode:'off'|'on'|undefined;tokens:number;label:string};
+export const defaultPMinSweep=[0,0.5,0.7,0.8,0.9];
+export function normalizePMinSweep(values:unknown):number[]{
+ if(!Array.isArray(values))return [];
+ return [...new Set(values.filter((n):n is number=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1))].sort((a,b)=>a-b);
+}
+export const mtpPMinLabel=(p:number|null|undefined)=>p==null?'Unknown (legacy)':String(p);
+export type MtpConfig={mtp?:'off'|'on';mtpDraftTokens?:number;mtpSweep?:number[];mtpDraftPMin?:number;mtpPMinSweep?:number[];mtpAutoFind?:boolean;mtpAutoRounds?:number};
+export type MtpStep={depth:number|null;mode:'off'|'on'|undefined;tokens:number;label:string;pMin?:number};
 // A sweep only means anything where MTP is available at all, which is exactly what the run's
 // own MTP switch already asserts for every selected model. With no sweep this returns the
 // single step the run has always had, whose depth is null: measurements from runs saved
 // before sweeping existed are left exactly as they were rather than relabelled.
 export function sweepSteps(config:MtpConfig):MtpStep[]{
  const tokens=config.mtpDraftTokens??2,sweep=normalizeSweep(config.mtpSweep);
- if(config.mtp!=='on'||!sweep.length)return [{depth:null,mode:config.mtp,tokens,label:mtpDepthLabel(null)}];
- return sweep.map(depth=>({depth,mode:depth===0?'off':'on',tokens:depth===0?tokens:depth,label:mtpDepthLabel(depth)}));
+ if(config.mtp!=='on')return [{depth:null,mode:config.mtp,tokens,label:mtpDepthLabel(null)}];
+ if(config.mtpAutoFind)return autoInitialSteps(config);
+ const probabilities=normalizePMinSweep(config.mtpPMinSweep);
+ const depths=sweep.length?sweep:probabilities.length?[tokens]:[null];
+ const ps=probabilities.length?probabilities:[config.mtpDraftPMin];
+ return depths.flatMap<MtpStep>(depth=>depth===0?[{depth,mode:'off' as const,tokens,label:mtpDepthLabel(depth)}]:
+  ps.map(pMin=>({depth,mode:'on' as const,tokens:depth??tokens,...(pMin===undefined?{}:{pMin}),
+   label:mtpDepthLabel(depth)+(pMin===undefined?'':` · p-min ${pMin}`)})));
+}
+const autoStep=(depth:number,pMin?:number):MtpStep=>({depth,mode:depth===0?'off':'on',tokens:depth||2,...(depth===0?{}:{pMin:pMin??0}),label:mtpDepthLabel(depth)+(depth===0?'':` · p-min ${pMin??0}`)});
+const autoDepths=(config:MtpConfig)=>normalizeSweep(config.mtpSweep??defaultSweep).filter(d=>d>0);
+// Screen the ends and middle first, then bisect the measured neighbors of the best
+// point in each dimension. This is a bounded heuristic, not a monotonic binary search.
+export function autoInitialSteps(config:MtpConfig):MtpStep[]{
+ const ds=autoDepths(config);if(!ds.length)return [autoStep(0)];
+ const coarse=[...new Set([ds[0],ds[Math.floor((ds.length-1)/2)],ds.at(-1)!])];
+ return [autoStep(0),...coarse.flatMap(d=>[0,.5,1].map(p=>autoStep(d,p)))];
+}
+export const autoStepLimit=(config:MtpConfig,concurrencyCount:number)=>autoInitialSteps(config).length+9*(config.mtpAutoRounds??2)*concurrencyCount;
+export function refineMtpSteps(config:MtpConfig,samples:Sample[],attempted:MtpStep[],qualityIds:string[]=[]):MtpStep[]{
+ const next:MtpStep[]=[],ds=autoDepths(config),seen=new Set(attempted.map(s=>`${s.depth}/${s.pMin??''}`));
+ const levels=[...new Set(samples.filter(s=>!s.warmup).map(s=>s.concurrency))];
+ for(const concurrency of levels){
+  const mine=samples.filter(s=>!s.warmup&&s.concurrency===concurrency);
+  const baseline=mine.filter(s=>s.mtpTokens===0);
+  if(!baseline.length||baseline.some(s=>s.status!=='completed'||qualityIds.includes(s.testId)&&(s.possibleTruncation||s.objective.score===null)))continue;
+  const quality=average(baseline.filter(s=>qualityIds.includes(s.testId)).map(s=>s.objective.score));
+  const candidates=sweepRows({samples:mine,waves:[]}).filter(r=>r.depth>0&&r.pMin!==null&&r.generationTps!==null&&r.failures===0&&r.requests===baseline.length&&
+   !mine.some(s=>s.mtpTokens===r.depth&&s.mtpPMin===r.pMin&&qualityIds.includes(s.testId)&&(s.possibleTruncation||s.objective.score===null))&&
+   (quality===null||average(mine.filter(s=>s.mtpTokens===r.depth&&s.mtpPMin===r.pMin&&qualityIds.includes(s.testId)).map(s=>s.objective.score))!>=quality-1));
+  const best=candidates.sort((a,b)=>b.generationTps!-a.generationTps!||a.depth-b.depth||a.pMin!-b.pMin!)[0];if(!best)continue;
+  const measuredDs=[...new Set(attempted.filter(s=>s.mode==='on').map(s=>s.depth!))].sort((a,b)=>a-b);
+  const measuredPs=[...new Set(attempted.filter(s=>s.mode==='on').map(s=>s.pMin!))].sort((a,b)=>a-b);
+  const di=measuredDs.indexOf(best.depth),pi=measuredPs.indexOf(best.pMin!);
+  const neighborsD=[best.depth],neighborsP=[best.pMin!];
+  for(const bound of [measuredDs[di-1],measuredDs[di+1]])if(bound!==undefined){
+   const mid=(bound+best.depth)/2,between=ds.filter(d=>d>Math.min(bound,best.depth)&&d<Math.max(bound,best.depth));
+   if(between.length)neighborsD.push(between.sort((a,b)=>Math.abs(a-mid)-Math.abs(b-mid)||a-b)[0]);
+  }
+  for(const bound of [measuredPs[pi-1],measuredPs[pi+1]])if(bound!==undefined)neighborsP.push(Number(((bound+best.pMin!)/2).toFixed(6)));
+  for(const d of neighborsD)for(const p of neighborsP){const key=`${d}/${p}`;if(!seen.has(key)){seen.add(key);next.push(autoStep(d,p));}}
+ }
+ return next;
+}
+export function autoMeasuredSteps(samples:Sample[]):MtpStep[]{
+ const steps=new Map<string,MtpStep>();
+ for(const s of samples.filter(s=>!s.warmup&&s.mtpTokens!==undefined)){const key=`${s.mtpTokens}/${s.mtpPMin??''}`;steps.set(key,autoStep(s.mtpTokens!,s.mtpPMin));}
+ return [...steps.values()];
 }
 export const isSweep=(config:MtpConfig)=>sweepSteps(config).length>1;
 // Every depth a preflight would stand in for. Whether a model can attach its MTP head at all
@@ -81,7 +133,7 @@ function pooledDraft(waves:Wave[]):SweepDraft|null{
 }
 
 export type SweepRow={
- modelKey:string;modelName:string;depth:number;label:string;concurrency:number;
+ pMin:number|null;modelKey:string;modelName:string;depth:number;label:string;concurrency:number;
  requests:number;completed:number;failures:number;
  generationTps:number|null;generationSd:number|null;generationSe:number|null;
  throughput:number|null;ttftMs:number|null;medianMs:number|null;p95Ms:number|null;objective:number|null;
@@ -96,14 +148,14 @@ export function sweepRows(run:Pick<Run,'samples'|'waves'>):SweepRow[]{
  const depths=measuredDepths(run),levels=measuredConcurrency(run);
  const keys=[...new Set(run.samples.filter(s=>!s.warmup).map(s=>s.modelKey))];
  const rows:SweepRow[]=[];
- for(const modelKey of keys)for(const depth of depths)for(const concurrency of levels){
-  const samples=run.samples.filter((s:Sample)=>!s.warmup&&s.modelKey===modelKey&&s.mtpTokens===depth&&s.concurrency===concurrency);
+ for(const modelKey of keys)for(const depth of depths)for(const concurrency of levels)for(const pMin of [...new Set(run.samples.filter(s=>!s.warmup&&s.modelKey===modelKey&&s.mtpTokens===depth&&s.concurrency===concurrency).map(s=>s.mtpPMin??null))]){
+  const samples=run.samples.filter((s:Sample)=>!s.warmup&&s.modelKey===modelKey&&s.mtpTokens===depth&&s.concurrency===concurrency&&(s.mtpPMin??null)===pMin);
   if(!samples.length)continue;
   const ok=samples.filter(s=>s.status==='completed');
   const rates=ok.map(s=>s.metrics.generationTps).filter((n):n is number=>typeof n==='number'&&Number.isFinite(n));
   const sd=spread(rates);
-  const waves=run.waves.filter((w:Wave)=>w.modelKey===modelKey&&w.mtpTokens===depth&&w.concurrency===concurrency);
-  rows.push({modelKey,modelName:samples[0].modelName,depth,label:mtpDepthLabel(depth),concurrency,
+  const waves=run.waves.filter((w:Wave)=>w.modelKey===modelKey&&w.mtpTokens===depth&&w.concurrency===concurrency&&(w.mtpPMin??null)===pMin);
+  rows.push({pMin,modelKey,modelName:samples[0].modelName,depth,label:mtpDepthLabel(depth)+(depth===0||pMin===null?'':` · p-min ${mtpPMinLabel(pMin)}`),concurrency,
    requests:samples.length,completed:ok.length,failures:samples.length-ok.length,
    generationTps:average(rates),generationSd:sd,generationSe:sd!==null&&rates.length>1?sd/Math.sqrt(rates.length):null,
    throughput:average(waves.map(w=>w.throughput)),ttftMs:average(ok.map(s=>s.metrics.ttftMs)),
@@ -130,29 +182,32 @@ const noisy=(a:SweepRow,b:SweepRow)=>{
 // One verdict per model and concurrency level. A depth is only ever compared with another
 // depth measured under the same load, because that is the only comparison that means anything:
 // the fastest depth at one request at a time need not be the fastest with five in flight.
-export function sweepVerdicts(run:Pick<Run,'samples'|'waves'>):SweepVerdict[]{
+export function sweepVerdicts(run:Pick<Run,'samples'|'waves'> & Partial<Pick<Run,'config'|'tests'>>):SweepVerdict[]{
  const all=sweepRows(run);
  const groups=[...new Set(all.map(r=>r.modelKey+' '+r.concurrency))];
  return groups.map(group=>{
   const [modelKey,level]=group.split(' '),concurrency=Number(level);
   const rows=all.filter(r=>r.modelKey===modelKey&&r.concurrency===concurrency).sort((a,b)=>a.depth-b.depth);
-  const usable=rows.filter(r=>r.generationTps!==null&&r.completed>0);
+  const off=rows.find(r=>r.depth===0),qualityIds=run.tests?.filter(t=>t.kind==='quality'&&t.rules.length).map(t=>t.id)??[];
+  const usable=rows.filter(r=>r.generationTps!==null&&r.completed>0&&(!run.config?.mtpAutoFind||r.failures===0&&r.requests===off?.requests&&
+   (off.objective===null||r.objective!==null&&r.objective>=off.objective-1)&&
+   !run.samples.some(s=>!s.warmup&&s.modelKey===r.modelKey&&s.concurrency===r.concurrency&&s.mtpTokens===r.depth&&(s.mtpPMin??null)===r.pMin&&qualityIds.includes(s.testId)&&(s.possibleTruncation||s.objective.score===null))));
   const baseline=usable[0]??null;
   const best=usable.reduce<SweepRow|null>((b,r)=>b===null||r.generationTps!>b.generationTps!?r:b,null);
   const modelName=rows[0]?.modelName??modelKey;
   if(!baseline||!best||usable.length<2)
    return {modelKey,modelName,concurrency,rows,baseline,best,gainPercent:null,withinNoise:true,qualityDelta:null,
-    summary:'Not enough completed measurements to compare depths. Only one depth produced results.'};
+    summary:'Not enough eligible completed measurements to compare MTP configurations.'};
   const gainPercent=baseline.generationTps!>0?(best.generationTps!-baseline.generationTps!)/baseline.generationTps!*100:null;
   const qualityDelta=best.objective!==null&&baseline.objective!==null?best.objective-baseline.objective:null;
   // When the baseline itself comes out fastest, what matters is whether the next-best depth was
   // really beaten or merely came second by less than the measurements can resolve. Saying
   // "nothing beat MTP off" about a dead heat would read as a verdict on MTP that was not earned.
-  const runnerUp=usable.filter(r=>r.depth!==best.depth).reduce<SweepRow|null>((b,r)=>b===null||r.generationTps!>b.generationTps!?r:b,null);
-  const withinNoise=best.depth===baseline.depth?runnerUp!==null&&noisy(best,runnerUp):noisy(best,baseline);
+  const runnerUp=usable.filter(r=>r!==best).reduce<SweepRow|null>((b,r)=>b===null||r.generationTps!>b.generationTps!?r:b,null);
+  const withinNoise=best===baseline?runnerUp!==null&&noisy(best,runnerUp):noisy(best,baseline);
   const quality=qualityDelta!==null&&qualityDelta<=-1
    ? ` Objective checks scored ${Math.abs(qualityDelta).toFixed(1)} points lower at that depth than at ${baseline.label}; read the responses before adopting it.`:'';
-  const summary=best.depth===baseline.depth
+  const summary=best===baseline
    ? withinNoise
     ? `Nothing beat ${baseline.label} on the numbers, but ${runnerUp!.label} is inside the spread of these measurements: this run does not separate them. Add waves before concluding anything.`
     : `Nothing beat ${baseline.label}: it was the fastest depth measured for this model at ${concurrency} concurrent request${concurrency===1?'':'s'}.`

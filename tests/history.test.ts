@@ -1,5 +1,6 @@
 import {performanceSummary} from '../src/performance-summary';
 import {test} from 'node:test';
+import {bestMtpGroups,chartRows} from '../src/history';
 import assert from 'node:assert/strict';
 import {defaultHistoryView,facetOptions,familyOf,groupHistory,matchesHistory,promptSizeOf,quantTier,restoreHistoryView,sizeBucket,sizeLabel,sortGroups,type HistoryRow,type HistoryView} from '../src/history';
 import {historyRows} from '../electron/history';
@@ -22,6 +23,16 @@ const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({...performanceSummary([])
  completed:1,durationsMs:[],objectiveCount:0,localJudgeCount:0,externalJudgeCount:0,
  ...patch} as HistoryRow);
 const view=(patch:Partial<HistoryView>={}):HistoryView=>({...defaultHistoryView,...patch});
+test('MTP history pools only identical settings across runs and keeps best means visible',()=>{
+ const base=row({mtp:'on',mtpDepth:2,mtpPMin:0,generationTps:40,requests:2,completed:2});
+ const data=[base,{...base,runId:'repeat',generationTps:44},{...base,runId:'threshold',mtpPMin:.8,generationTps:48},{...base,runId:'different-context',contextLength:16384,generationTps:60}];
+ const groups=groupHistory(data,view({groupBy:'mtpSettings'}));
+ assert.equal(groups.length,3);
+ const repeated=groups.find(g=>g.runs.length===2)!;assert.equal(repeated.generationTps?.value,42);
+ assert.equal(bestMtpGroups(groups).size,2,'different contexts have separate best settings');
+ assert.ok([...bestMtpGroups(groups)].some(k=>groups.find(g=>g.key===k)?.rows[0].mtpPMin===.8));
+ assert.equal(chartRows(groups).length,3);
+});
 test('the family comes from the reported architecture, never from the repackager',()=>{
  assert.equal(familyOf('gemma4','gemma-4-12b-it@iq3_xxs'),'Gemma');
  assert.equal(familyOf('qwen35','qwen3.8-27b@iq3_s'),'Qwen');

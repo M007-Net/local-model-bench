@@ -2,13 +2,15 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {runEngine,type Adapter,type EngineEvent} from '../electron/engine';
 import {exportText,summaries} from '../electron/export';
+import {chartReport} from '../electron/chart-report';
 import {historyRows} from '../electron/history';
 import {assertMtpPlan} from '../electron/mtp';
 import {metrics} from '../electron/metrics';
 import {validateConfig} from '../electron/validation';
 import {benchmarkRows} from '../src/benchmarks';
 import {defaultConfig,defaultSettings,starterTests} from '../src/defaults';
-import {measuredDepths,mtpDepthLabel,mtpDepthText,normalizeSweep,onSteps,preflightStep,sweepRows,sweepSteps,sweepVerdicts} from '../src/mtp-sweep';
+import {calibrationKey,calibrationFor} from '../src/prefill';
+import {autoInitialSteps,autoStepLimit,refineMtpSteps,measuredDepths,mtpDepthLabel,mtpDepthText,normalizeSweep,normalizePMinSweep,onSteps,preflightStep,sweepRows,sweepSteps,sweepVerdicts} from '../src/mtp-sweep';
 import type {Model,Run,RunConfig,Sample} from '../src/types';
 
 const textTest=starterTests.find(t=>t.id==='reasoning')!;
@@ -19,12 +21,12 @@ const makeRun=(config:Partial<RunConfig>):Run=>({id:'sweep-run',created:'2026-09
 // Mirrors the real adapter closely enough to exercise what a sweep depends on: the depth is
 // carried on the load command line, and the loaded instance reports back what it applied, which
 // is the only thing the engine will accept as confirmation.
-function mockAdapter(opts:{supported?:boolean|null;rates?:Record<number,number[]>;misreportAt?:number;failMtp?:boolean}={}){
- const loads:{args:string[];depth:number}[]=[];const counters=new Map<number,number>();
+function mockAdapter(opts:{supported?:boolean|null;rates?:Record<number,number[]>;misreportAt?:number;failMtp?:boolean;misreportProbability?:boolean}={}){
+ const loads:{args:string[];depth:number;pMin?:number}[]=[];const counters=new Map<number,number>();let pMin:number|undefined;
  let instance='',instanceConfig:Record<string,unknown>={},depth=0,parallel=1,context=2048;
  const model={key:'mock',display_name:'Mock',format:'gguf',type:'llm',size_bytes:100,quantization:null,max_context_length:8192,loaded_instances:[],
   nativeMtp:{supported:opts.supported===undefined?true:opts.supported,reason:'test fixture'}} as unknown as Model;
- const adapter:Adapter={cacheQuant:()=>()=>{},
+ const adapter:Adapter={cacheQuant:()=>()=>{},mtpProbability:(_model,p)=>{pMin=p;return ()=>{pMin=undefined;};},
   models:async()=>[{...model,loaded_instances:instance?[{id:instance,config:{context_length:context,parallel,...instanceConfig}}]:[]}],
   cli:async(_s,args)=>{
    // Stands in for a runtime that can load the model but not its prediction heads.
@@ -33,8 +35,9 @@ function mockAdapter(opts:{supported?:boolean|null;rates?:Record<number,number[]
    parallel=Number(args[args.indexOf('--parallel')+1]);context=Number(args[args.indexOf('--context-length')+1]);
    const on=args.includes('--speculative-draft-mtp');
    const asked=args.includes('--speculative-draft-max-tokens')?Number(args[args.indexOf('--speculative-draft-max-tokens')+1]):null;
-   depth=on?(asked??0):0;loads.push({args:[...args],depth});
+   depth=on?(asked??0):0;loads.push({args:[...args],depth,pMin});
    instanceConfig=on?{speculative_draft_mtp:true,speculative_draft_max_tokens:opts.misreportAt===depth?depth+1:asked}:{speculative_draft_mtp:false};
+   if(on&&pMin!==undefined)instanceConfig.speculative_draft_min_continue_probability=opts.misreportProbability?undefined:pMin;
    return 'loaded';
   },
   api:async()=>{instance='';instanceConfig={};return {};},
@@ -64,6 +67,85 @@ const runIt=async(run:Run,mock:ReturnType<typeof mockAdapter>,retries?:Sample[])
  return {events,finish,logs:events.filter(e=>e.type==='log').map(e=>(e as Extract<EngineEvent,{type:'log'}>).message),
   total:(events.filter(e=>e.type==='progress').at(-1) as Extract<EngineEvent,{type:'progress'}>|undefined)?.progress.total??0};
 };
+
+test('draft probability crosses every on-depth and measures the off baseline only once',async()=>{
+ assert.deepEqual(normalizePMinSweep([.8,0,.8,1,-1,NaN,2,'0.5']),[0,.8,1]);
+ const run=makeRun({mtpSweep:[0,1,3],mtpPMinSweep:[.8,0]});
+ validateConfig(run.config);
+ assert.deepEqual(sweepSteps(run.config).map(s=>[s.depth,s.pMin]),[[0,undefined],[1,0],[1,.8],[3,0],[3,.8]]);
+ const mock=mockAdapter();const {finish,total}=await runIt(run,mock);
+ assert.equal(finish.status,'completed');assert.equal(total,10);
+ assert.deepEqual(mock.loads.map(l=>[l.depth,l.pMin]),[[0,undefined],[1,0],[1,.8],[3,0],[3,.8]]);
+ assert.equal(run.samples.filter(s=>!s.warmup&&s.mtpTokens===0).length,2);
+ const rows=summaries(run);assert.equal(rows.length,5);
+ assert.equal(sweepRows(run).length,5);assert.equal(historyRows([run],{}).length,5);
+ assert.equal(benchmarkRows({...run,tests:[{...textTest,benchmark:{packId:'test',itemId:'x',datasetHash:'test',protocol:'test'}}]}).length,5);
+ assert.ok(run.waves.filter(w=>w.mtpTokens===3).some(w=>w.mtpPMin===.8));
+ assert.match(exportText(run,'md'),/p-min 0.8/);assert.match(exportText(run,'csv'),/mtpPMin/);
+ assert.equal(sweepVerdicts(run)[0].rows.length,5);
+ const graph=chartReport(run);assert.match(graph,/Maximum predictions \(0 = MTP off\)/);assert.match(graph,/p-min 0.8/);
+ const failed=run.samples.find(s=>!s.warmup&&s.mtpTokens===3&&s.mtpPMin===.8)!;
+ const retry=makeRun(run.config),retryMock=mockAdapter();const result=await runIt(retry,retryMock,[{...failed,status:'failed'}]);
+ assert.equal(result.total,1);assert.deepEqual(retryMock.loads.map(l=>[l.depth,l.pMin]),[[3,.8]]);
+ assert.equal(retry.samples.filter(s=>!s.warmup)[0].mtpPMin,.8);
+});
+test('exported probability-only graphs spread settings along the probability axis',async()=>{
+ const run=makeRun({mtpSweep:[2],mtpPMinSweep:[0,.8]});await runIt(run,mockAdapter());
+ const graph=chartReport(run);assert.match(graph,/Minimum draft probability/);assert.match(graph,/2 draft tokens/);
+});
+test('probability-only sweeps use the selected maximum predictions; off ignores thresholds',()=>{
+ assert.deepEqual(sweepSteps({mtp:'on',mtpDraftTokens:4,mtpPMinSweep:[.9,.5]}).map(s=>[s.depth,s.tokens,s.pMin]),[[4,4,.5],[4,4,.9]]);
+ assert.equal(sweepSteps({mtp:'off',mtpPMinSweep:[0,.9]}).length,1);
+ const c={...defaultConfig,modelKeys:['mock'],mtp:'on' as const};
+ for(const mtpPMinSweep of [[],[NaN],[-.1],[1.01],Array(9).fill(.5)])assert.throws(()=>validateConfig({...c,mtpPMinSweep}));
+ assert.throws(()=>validateConfig({...c,mtpDraftPMin:NaN}));
+ assert.throws(()=>validateConfig({...c,mtp:'off',mtpPMinSweep:[.5]}));
+});
+test('auto find screens then bisects around measured winners without duplicate loads',async()=>{
+ const run=makeRun({mtpSweep:[0,1,2,3,4,5],mtpAutoFind:true,mtpAutoRounds:2});
+ const mock=mockAdapter({rates:{0:[30,30],1:[35,35],2:[42,42],3:[45,45],4:[41,41],5:[32,32]}});
+ validateConfig(run.config);const initial=autoInitialSteps(run.config);
+ assert.equal(initial.length,10);assert.equal(autoStepLimit(run.config,1),28);
+ const {finish,total}=await runIt(run,mock);assert.equal(finish.status,'completed');
+ assert.ok(mock.loads.length>initial.length);assert.ok(mock.loads.length<=28);
+ assert.equal(mock.loads.filter(l=>l.depth===0).length,1);
+ assert.equal(new Set(mock.loads.map(l=>`${l.depth}/${l.pMin}`)).size,mock.loads.length);
+ assert.ok(mock.loads.some(l=>l.depth===2&&l.pMin===.25));
+ assert.equal(total,mock.loads.length*2);
+ assert.equal(benchmarkRows({...run,tests:[{...textTest,benchmark:{packId:'x',itemId:'x',datasetHash:'x',protocol:'x'}}]}).length,mock.loads.length);
+ const refined=run.samples.find(s=>!s.warmup&&s.mtpTokens===2&&s.mtpPMin===.25)!;
+ const retry=makeRun(run.config),retryMock=mockAdapter();await runIt(retry,retryMock,[{...refined,status:'failed'}]);
+ assert.deepEqual(retryMock.loads.map(l=>[l.depth,l.pMin]),[[2,.25]]);
+});
+test('auto find does not refine failed, incomplete or lower-quality measurements',async()=>{
+ const run=makeRun({mtpSweep:[0,1,3,5],mtpAutoFind:true});await runIt(run,mockAdapter());
+ const attempted=autoInitialSteps(run.config),samples=run.samples.filter(s=>!s.warmup);
+ assert.ok(refineMtpSteps(run.config,samples,attempted,[textTest.id]).length>0);
+ const worse=samples.map(s=>({...s,objective:{score:s.mtpTokens===0?100:0,checks:[]}}));
+ assert.deepEqual(refineMtpSteps(run.config,worse,attempted,[textTest.id]),[]);
+ assert.deepEqual(refineMtpSteps(run.config,samples.map(s=>({...s,status:'failed'})),attempted),[]);
+ assert.deepEqual(refineMtpSteps(run.config,samples.filter(s=>s.wave===0||s.mtpTokens===0),attempted),[]);
+ assert.throws(()=>validateConfig({...run.config,waves:1}),/two waves/);
+ assert.throws(()=>validateConfig({...run.config,mode:'performance',loadProfile:'sustained'}),/fixed waves/);
+ assert.throws(()=>validateConfig({...run.config,mtpPMinSweep:[0,.8]}),/auto find or/);
+});
+test('an unreported probability cannot be measured or attributed to the requested threshold',async()=>{
+ const run=makeRun({mtpSweep:[0,2],mtpPMinSweep:[0,.8]}),mock=mockAdapter({misreportProbability:true});
+ const {finish}=await runIt(run,mock);
+ assert.equal(finish.status,'failed');assert.equal(run.samples.filter(s=>!s.warmup).length,2);
+ assert.ok(run.samples.every(s=>s.mtpTokens===0));
+ assert.match(finish.error!,/minimum draft probability/);
+});
+test('zero and an unknown historical probability remain separate measurements',async()=>{
+ const run=makeRun({mtpSweep:[2],mtpDraftPMin:0});await runIt(run,mockAdapter());
+ const saved=structuredClone(run.samples.find(s=>!s.warmup)!);delete saved.mtpPMin;saved.id='legacy';run.samples.push(saved);
+ assert.equal(summaries(run).length,2);assert.equal(historyRows([run],{}).length,2);assert.equal(sweepRows(run).length,2);
+ run.modelInfo[calibrationKey('mock',2,0)]={marginalTps:100};
+ run.modelInfo[calibrationKey('mock',2,.8)]={marginalTps:200};
+ assert.equal(calibrationFor(run,'mock',2,0)?.marginalTps,100);
+ assert.equal(calibrationFor(run,'mock',2,.8)?.marginalTps,200);
+ assert.equal(calibrationFor(run,'mock',2,.5),null,'a different threshold cannot borrow calibration evidence');
+});
 
 test('a sweep is an ordered, de-duplicated list of depths, and no sweep is still one step',()=>{
  assert.deepEqual(normalizeSweep([4,2,2,0]),[0,2,4]);

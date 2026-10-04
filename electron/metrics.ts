@@ -89,7 +89,7 @@ export function waveMetrics(id:string,runId:string,modelKey:string,testId:string
  // The MTP depth comes from the requests the wave is made of rather than being passed in, so a
  // wave can never disagree with the responses it summarises about which depth produced them.
  const depth=samples[0]?.mtpTokens;
- return {id,runId,modelKey,testId,concurrency,durationMs,outputTokens:tokens,throughput:tokens!==null&&durationMs>0?tokens/(durationMs/1000):null,completed:good.length,failed:samples.length-good.length,gpu,...(draft?{draft}:{}),...(typeof depth==='number'?{mtpTokens:depth}:{})};
+ return {...(samples[0]?.mtpPMin===undefined?{}:{mtpPMin:samples[0].mtpPMin}),id,runId,modelKey,testId,concurrency,durationMs,outputTokens:tokens,throughput:tokens!==null&&durationMs>0?tokens/(durationMs/1000):null,completed:good.length,failed:samples.length-good.length,gpu,...(draft?{draft}:{}),...(typeof depth==='number'?{mtpTokens:depth}:{})};
 }
 export function percentile(values:number[],p:number){if(!values.length)return null;const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.max(0,Math.ceil(p*sorted.length)-1)];}
 export function average(values:(number|null)[]){const xs=values.filter((v):v is number=>v!==null&&Number.isFinite(v));return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;}

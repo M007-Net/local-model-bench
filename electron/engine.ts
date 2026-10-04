@@ -1,3 +1,4 @@
+import {applyMtpProbability,verifyMtpProbability} from './mtp-probability';
 import {isManagedEndpoint,canManageLocally,providerLabel} from '../src/endpoint';
 import { randomUUID, createHash } from 'node:crypto';
 import type { Run, RunGpu, Sample, Settings, Model, Progress, TestCase, Grade } from '../src/types';
@@ -7,7 +8,7 @@ import { waveMetrics } from './metrics';
 import { mtpArgs,verifyMtp } from './mtp';
 import { applySidecar } from './mtp-sidecar';
 import { draftModelsLoaded,settledDraftAcceptance,watchEngineLog } from './engine-log';
-import { mtpDepthText,onSteps,preflightStep,sweepSteps,type MtpStep } from '../src/mtp-sweep';
+import { mtpDepthText,autoMeasuredSteps,refineMtpSteps,onSteps,preflightStep,sweepSteps,type MtpStep } from '../src/mtp-sweep';
 import { visionArgs,verifyVision,visionSummary,type VisionMode } from './vision';
 import { applyCacheQuant,verifyCacheQuant } from './cache-quant';
 import { cacheQuantText,flashOn } from '../src/cache-quant';
@@ -22,8 +23,8 @@ import { scheduleArrivals, summarizeArrivalRate } from '../src/arrival-rate';
 export type EngineEvent = {type:'sample';sample:Sample}|{type:'wave';wave:Run['waves'][number]}|{type:'progress';progress:Progress}|{type:'log';message:string}|{type:'model';key:string;info:unknown}|{type:'grade';sampleId:string;grade:Grade}|{type:'gpu';gpu:RunGpu}|{type:'finish';status:Run['status'];error?:string};
 // The last four read and write LM Studio's own files rather than talking to its server, and are
 // listed here so a test can exercise those paths without touching a real LM Studio.
-export type Adapter = {models:typeof listModels;cli:typeof cli;infer:typeof infer;api:typeof api;sidecar?:typeof applySidecar;watchLog?:typeof watchEngineLog;draftModels?:typeof draftModelsLoaded;draftAcceptance?:typeof settledDraftAcceptance;cacheQuant?:typeof applyCacheQuant};
-const real:Adapter={models:listModels,cli,infer,api,sidecar:applySidecar,watchLog:watchEngineLog,draftModels:draftModelsLoaded,draftAcceptance:settledDraftAcceptance,cacheQuant:applyCacheQuant};
+export type Adapter = {models:typeof listModels;cli:typeof cli;infer:typeof infer;api:typeof api;sidecar?:typeof applySidecar;watchLog?:typeof watchEngineLog;draftModels?:typeof draftModelsLoaded;draftAcceptance?:typeof settledDraftAcceptance;mtpProbability?:typeof applyMtpProbability;cacheQuant?:typeof applyCacheQuant};
+const real:Adapter={models:listModels,cli,infer,api,mtpProbability:applyMtpProbability,sidecar:applySidecar,watchLog:watchEngineLog,draftModels:draftModelsLoaded,draftAcceptance:settledDraftAcceptance,cacheQuant:applyCacheQuant};
 export function variant(prompt:string,testId:string,concurrency:number,wave:number,slot:number){const tag=createHash('sha256').update(`${testId}/${concurrency}/${wave}/${slot}`).digest('hex').slice(0,24);return `[Benchmark record ${tag}; ignore this record identifier in your answer.]\n${prompt}`;}
 export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emit:(e:EngineEvent)=>void,adapter:Adapter=real,retries?:Sample[],gradeOnly=false,gpu:GpuSampler=idleSampler('GPU telemetry was not started for this run.')){
  let completed=0,active=0,currentModel='',failures=0,firstFailure='';const measured:Sample[]=[];
@@ -32,10 +33,10 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
  const unmeasured:string[]=[];let owned:string|null=null;const runStart=Date.now();
  // MTP depth is a load-time setting, so each depth is its own load of the model and its own
  // pass over the whole workload. Without a sweep this is one step and nothing below changes.
- const steps=sweepSteps(run.config);let currentStep:MtpStep=steps[0];
+ const steps=retries&&run.config.mtpAutoFind?autoMeasuredSteps(retries):sweepSteps(run.config);let currentStep:MtpStep=steps[0];
  // mtpDepthText, never "MTP " + label: the label for depth 0 is already "MTP off", so the
  // shorter form read "MTP MTP off" on every baseline load and wave of a sweep.
- const stepNote=()=>steps.length>1?` · ${mtpDepthText(currentStep.depth)}`:'';
+ const stepNote=()=>steps.length>1?` · ${mtpDepthText(currentStep.depth)}${currentStep.pMin===undefined?'':` · p-min ${currentStep.pMin}`}`:'';
  const sustained=run.config.loadProfile==='sustained'&&!retries,arrivalMode=run.config.loadProfile==='arrival-rate'&&!retries;
  const perStep=run.tests.length*run.config.waves*run.config.concurrency.reduce((a,b)=>a+b,0);
  const arrivalRequests=Math.ceil((run.config.arrivalRatePerSecond??1)*(run.config.durationSec??30));
@@ -85,9 +86,13 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
   // rather than inheriting whatever LM Studio last had, and the difference is about five times the
   // prompt processing plus several seconds of fixed cost per request.
   const undoCache=(adapter.cacheQuant??applyCacheQuant)(model,cacheK,cacheV,flash);
-  const restore=paired&&mode==='on'?(adapter.sidecar??applySidecar)(model,draftTokens):null;
+  let undoProbability:(()=>void)|null=null,restore:(()=>void)|null=null;
   const started=performance.now();let loadOutput:string;
-  try{loadOutput=await adapter.cli(settings,args,signal);}
+  try{
+   if(mode==='on'&&step.pMin!==undefined)undoProbability=(adapter.mtpProbability??applyMtpProbability)(model,step.pMin);
+   restore=paired&&mode==='on'?(adapter.sidecar??applySidecar)(model,draftTokens):null;
+  loadOutput=await adapter.cli(settings,args,signal);
+  }
   catch(e){
    // LM Studio says it could not fit the model, in words that name none of the settings that
    // decided how much room it needed. The arithmetic this run already did is added here, where
@@ -99,7 +104,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
    const estimate=await estimateLoad(settings,adapter.cli,key,total,parallel,signal);
    throw Error(`${(e as Error).message}\n\n${loadAdvice(model,context,parallel,cacheK,cacheV,estimate)}`);
   }
-  finally{restore?.();undoCache?.();}
+  finally{try{restore?.();}finally{try{undoProbability?.();}finally{undoCache?.();}}}
   const fresh=await adapter.models(settings);const owner=fresh.find(m=>m.loaded_instances.some(i=>i.id===owned));const instance=owner?.loaded_instances.find(i=>i.id===owned);
   if(owner&&owner.key!==key)throw Error('LM Studio resolved the model key to a different file. No measurements were taken.');
   if(!instance)throw Error('Loaded instance was not returned by LM Studio. Check that the CLI and API address use the same server.');
@@ -109,14 +114,16 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
   verifyMtp(instance.config,mode,model.format,draftTokens,{...(paired?{kind:'sidecar' as const,draftPath:model.nativeMtp!.draftPath}:{}),draftersLoaded:watch?(adapter.draftModels??draftModelsLoaded)(watch):[]});
   // A cache type LM Studio did not apply would make the run report a memory saving it never got,
   // and compare against other runs as though it had. Checked here, before anything is measured.
+  if(mode==='on'&&step.pMin!==undefined)verifyMtpProbability(instance.config,step.pMin);
   verifyCacheQuant(instance.config as Record<string,unknown>,cacheK,cacheV,flash);
   // Vision is confirmed from the reloaded model entry's reported capability, the only
   // evidence LM Studio gives; a failure throws here, before any request is measured.
   const vision=verifyVision(owner,visionMode);
   log(visionSummary(vision));
-  log(`Native MTP: ${mode??'legacy/default'}${mode==='on'?` · ${draftTokens} draft tokens · ${paired?'separate MTP head':'heads built into the model file'}`:''}${steps.length>1&&role!=='judge'?` (sweep step ${steps.indexOf(step)+1} of ${steps.length})`:''}`);
+  if(mode==='on'&&step.pMin!==undefined)log(`Confirmed draft p-min: ${step.pMin}.`);
+  log(`Native MTP: ${mode??'legacy/default'}${mode==='on'?` · ${draftTokens} draft tokens · ${paired?'separate MTP head':'heads built into the model file'}`:''}${steps.length>1&&role!=='judge'?(run.config.mtpAutoFind?' (auto find)':` (sweep step ${steps.indexOf(step)+1} of ${steps.length})`):''}`);
   log(`${model.display_name}: ${parallel} parallel slots share ${total} context tokens, ${context} per concurrent request.`);
-  const info={model,instance,vision,loadMs:performance.now()-started,loadOutput,mtp:{depth:role==='judge'?null:step.depth,mode:mode??'legacy/default',draftTokens:mode==='on'?draftTokens:null,kind:mode==='on'?(model.nativeMtp?.kind??null):null,head:paired&&mode==='on'?model.nativeMtp!.draftResource:null},reasoning:run.config.reasoning==='default'?(model.capabilities?.reasoning?.default??'not exposed'):run.config.reasoning};
+  const info={model,instance,vision,loadMs:performance.now()-started,loadOutput,mtp:{pMin:mode==='on'?(step.pMin??null):null,depth:role==='judge'?null:step.depth,mode:mode??'legacy/default',draftTokens:mode==='on'?draftTokens:null,kind:mode==='on'?(model.nativeMtp?.kind??null):null,head:paired&&mode==='on'?model.nativeMtp!.draftResource:null},reasoning:run.config.reasoning==='default'?(model.capabilities?.reasoning?.default??'not exposed'):run.config.reasoning};
   // A preflight is a question, not a measurement, so it leaves no record of a model behind.
   if(role!=='preflight')emit({type:'model',key:role==='judge'?'judge:'+key:key,info});
   // A sweep loads the same model once per depth, so each depth also keeps its own record of
@@ -146,7 +153,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
    for(let i=0;i<calibrationRepeats.count;i++){short.push(await point(calibrationRepeats.small));long.push(await point(calibrationRepeats.big));}
    const calibration=calibratePrefillRepeated(short,long);
    log(`Prompt processing for ${model.display_name}: ${prefillText(calibration)}. ${calibration.note}`);
-   emit({type:'model',key:calibrationKey(key,steps.length>1?step.depth:null),info:calibration});
+   emit({type:'model',key:calibrationKey(key,steps.length>1||step.pMin!==undefined?step.depth:null,step.pMin),info:calibration});
   }catch(e){
    // A calibration that could not be taken costs the run nothing else: the per-request figures
    // are still recorded, they are simply left uncorrected.
@@ -180,7 +187,7 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
   // a sweep gives one run several depths, and every response has to say which one produced it.
   const inputTarget=test.contextTargetTokens??test.contextTokens??undefined,inputTolerance=test.inputTolerancePct??run.config.contextTolerancePct??5,actualInput=result.metrics.inputTokens;
   const within=inputTarget===undefined||actualInput===null?null:Math.abs(actualInput-inputTarget)/inputTarget*100<=inputTolerance;
-  const sample:Sample={...result,cacheMode:test.cacheMode,cachePrimeInputTokens:test.cachePrimeInputTokens??null,inputTargetTokens:inputTarget,inputTolerancePct:inputTarget===undefined?undefined:inputTolerance,inputProbeCount:test.inputProbeTokens?.length,inputProbeTokens:test.inputProbeTokens,inputWithinTolerance:within,requestedOutputTokens:max,...(arrival?{arrivalTiming:{plannedAtMs:arrival.plannedAtMs,startedAtMs:requestStartMono-arrival.pointStart,completedAtMs:finishedMono-arrival.pointStart,queueWaitMs:requestStartMono-arrival.pointStart-arrival.plannedAtMs}}:{}),...(currentStep.depth===null?{}:{mtpTokens:currentStep.depth}),...(test.contextTokens===undefined?{}:{contextTokens:test.contextTokens}),id:randomUUID(),runId:run.id,modelKey:model.key,modelName:model.display_name,testId:test.id,testName:test.name,concurrency:c,waveId,wave,slot,warmup,prompt,objective:result.status==='completed'&&!warmup?objectiveScore(result.output,test):{score:null,checks:[]},grades:[],created:new Date().toISOString(),retryOf:previous?.id,gpu:gpu.window(startedAt,finishedAt)};
+  const sample:Sample={...result,...(currentStep.mode==='on'&&currentStep.pMin!==undefined?{mtpPMin:currentStep.pMin}:{}),cacheMode:test.cacheMode,cachePrimeInputTokens:test.cachePrimeInputTokens??null,inputTargetTokens:inputTarget,inputTolerancePct:inputTarget===undefined?undefined:inputTolerance,inputProbeCount:test.inputProbeTokens?.length,inputProbeTokens:test.inputProbeTokens,inputWithinTolerance:within,requestedOutputTokens:max,...(arrival?{arrivalTiming:{plannedAtMs:arrival.plannedAtMs,startedAtMs:requestStartMono-arrival.pointStart,completedAtMs:finishedMono-arrival.pointStart,queueWaitMs:requestStartMono-arrival.pointStart-arrival.plannedAtMs}}:{}),...(currentStep.depth===null?{}:{mtpTokens:currentStep.depth}),...(test.contextTokens===undefined?{}:{contextTokens:test.contextTokens}),id:randomUUID(),runId:run.id,modelKey:model.key,modelName:model.display_name,testId:test.id,testName:test.name,concurrency:c,waveId,wave,slot,warmup,prompt,objective:result.status==='completed'&&!warmup?objectiveScore(result.output,test):{score:null,checks:[]},grades:[],created:new Date().toISOString(),retryOf:previous?.id,gpu:gpu.window(startedAt,finishedAt)};
   if(!warmup){completed++;measured.push(sample);if(sample.status!=='completed'){failures++;firstFailure ||= sample.error||sample.status;}}
   emit({type:'sample',sample});progress('benchmarking',sustained?`${test.name} · ${completed} completed · duration-based point`:`${test.name} · ${completed} of ${total} finished`);return sample;
  };
@@ -305,13 +312,15 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
    }
    for(const key of run.config.modelKeys){
     if(signal.aborted)break;currentModel=key;
-    for(const step of steps){
+    const queue=[...steps];let autoRound=0;
+    for(let stepIndex=0;stepIndex<queue.length;stepIndex++){
+     const step=queue[stepIndex];
      if(signal.aborted)break;currentStep=step;
      // Already counted and named by the preflight that could not load this model's head.
      if(step.mode==='on'&&blocked.has(key))continue;
      // A retry re-runs each failed request at the depth it was originally measured at, so a
      // depth with nothing to retry is never loaded and never warmed up.
-     const mine=retries?retries.filter(s=>s.modelKey===key&&(s.mtpTokens??null)===step.depth):null;
+     const mine=retries?retries.filter(s=>s.modelKey===key&&(s.mtpTokens??null)===step.depth&&(s.mtpPMin??null)===(step.pMin??null)):null;
      if(mine&&!mine.length)continue;
      try{
       const {model,id}=await load(key,Math.max(...run.config.concurrency),models,'benchmark',step);
@@ -343,6 +352,14 @@ export async function runEngine(run:Run,settings:Settings,signal:AbortSignal,emi
        }
       }
      }catch(e){if(!signal.aborted){failures++;firstFailure ||= (e as Error).message;unmeasured.push(`${key}${stepNote()}`);log(`Model failed: ${key}${stepNote()}: ${(e as Error).message}`);}}finally{await cleanup();}
+     if(run.config.mtpAutoFind&&!retries&&!signal.aborted&&stepIndex===queue.length-1&&autoRound<(run.config.mtpAutoRounds??2)&&!blocked.has(key)){
+      const next=refineMtpSteps(run.config,measured.filter(s=>s.modelKey===key),queue,run.tests.filter(t=>t.kind==='quality'&&t.rules.length).map(t=>t.id));
+      if(next.length){autoRound++;queue.push(...next);total+=next.length*perStep;
+       log(`Auto find round ${autoRound}: bisecting around the best eligible measured settings; ${next.length} new combinations.`);
+       emit({type:'model',key:'mtp-auto:'+key,info:{round:autoRound,steps:queue,method:'coarse screen followed by midpoint refinement; best observed, not a guaranteed global optimum'}});
+       progress('searching',`Auto find: refinement round ${autoRound}, ${next.length} new MTP combinations…`);
+      }else{log('Auto find stopped: no untested refinement points remain around eligible measured settings.');emit({type:'model',key:'mtp-auto:'+key,info:{round:autoRound,steps:queue,stopReason:'No eligible untested refinement points',method:'coarse screen followed by midpoint refinement; best observed, not a guaranteed global optimum'}});}
+     }
     }
    }
   }

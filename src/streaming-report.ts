@@ -5,8 +5,8 @@ import {escapeHtml} from './charts';
 const cell=(value:unknown)=>`<td>${value===null||value===undefined?'Unavailable':escapeHtml(typeof value==='number'?Number(value.toFixed(2)):value)}</td>`;
 const percent=(value:number|null|undefined)=>value==null?'Unavailable':`${value.toFixed(1)}%`;
 const cacheIntent=(mode:string)=>mode==='cold-prompt'?'Cold-prompt intent':mode==='cached-prefix-followup'?'Cached-prefix follow-up intent':mode==='total-context'?'Total-context intent':'Unknown (legacy or not recorded)';
-const sampleMatches=(sample:Sample,row:{modelKey:string;testId:string;concurrency:number;mtpDepth:number|null})=>
- !sample.warmup&&sample.modelKey===row.modelKey&&sample.testId===row.testId&&sample.concurrency===row.concurrency&&(sample.mtpTokens??null)===row.mtpDepth;
+const sampleMatches=(sample:Sample,row:{modelKey:string;testId:string;concurrency:number;mtpDepth:number|null;mtpPMin:number|null})=>
+ !sample.warmup&&(sample.mtpPMin??null)===row.mtpPMin&&sample.modelKey===row.modelKey&&sample.testId===row.testId&&sample.concurrency===row.concurrency&&(sample.mtpTokens??null)===row.mtpDepth;
 const stopLimitCell=(samples:Sample[])=>{
  const known=samples.filter(s=>typeof s.possibleTruncation==='boolean');
  return known.length?`${known.filter(s=>s.possibleTruncation).length} / ${known.length} possible output-limit stops`:'Unavailable';
@@ -22,7 +22,7 @@ function inputCacheOutputTable(run:Run,rows:ReturnType<typeof summaries>){
   const within=toleranceCell(r);
   const cached=r.cacheHitsKnown?r.cachedInputTokensMean:null,newTokens=r.cacheHitsKnown?r.newInputTokensMean:null;
   return `<tr>${[
-   `${r.model} / ${r.test}${r.mtpDepth===null?'':` / MTP ${r.mtpDepth}`}`,r.concurrency,r.inputTargetTokens,r.inputTargetTolerancePct==null?null:`± ${percent(r.inputTargetTolerancePct)}`,
+   `${r.model} / ${r.test}${r.mtpPMin===null?'':' / draft p-min '+r.mtpPMin}${r.mtpDepth===null?'':` / MTP ${r.mtpDepth}`}`,r.concurrency,r.inputTargetTokens,r.inputTargetTolerancePct==null?null:`± ${percent(r.inputTargetTolerancePct)}`,
    r.actualInputTokensMean??r.inputTokensMean,r.inputTargetDeviationPct==null?null:percent(r.inputTargetDeviationPct),within,r.contextTarget,
    cacheIntent(r.cacheMode),r.cachePrimeInputTokens,cached,newTokens,r.cacheAccountingMethods,
    r.requestedOutputLimitTokens,r.actualOutputTokensMean,stopLimitCell(samples),
@@ -57,7 +57,7 @@ export function streamingReport(run:Run){
  const lead=`Load profile: ${escapeHtml(run.config.loadProfile??'waves')}. ${run.config.loadProfile==='sustained'?`${run.config.durationSec??30} seconds of new requests per combination; throughput includes in-flight drain. Fixed concurrency, not fixed arrival rate.`:''}${isArrival?' Offered arrivals are open-loop; queued arrivals and the configured in-flight cap affect achieved starts.':''} First output and stream gaps are client-observed, including buffering. Chunks can contain multiple tokens; gaps are not exact inter-token latency. Percentiles exclude failed requests and warm-ups and are unstable for small samples. Approximate context targets do not change server context capacity. Missing historical fields remain unavailable.`;
  const streamingHeadings=['Model / prompt','Concurrency','Approximate context target (tokens)','Actual input tokens (mean)','Timed responses','First output p50 ms','First output p95 ms','First output p99 ms','Response p99 ms','Mean stream gap ms','Worst stream gap ms','Estimated ms/token'];
  const streamingRows=rows.map(r=>`<tr>${[
-  `${r.model} / ${r.test}${r.mtpDepth===null?'':` / MTP ${r.mtpDepth}`}`,r.concurrency,r.contextTarget,r.inputTokensMean,r.streamingRequests,
+  `${r.model} / ${r.test}${r.mtpPMin===null?'':' / draft p-min '+r.mtpPMin}${r.mtpDepth===null?'':` / MTP ${r.mtpDepth}`}`,r.concurrency,r.contextTarget,r.inputTokensMean,r.streamingRequests,
   r.firstEventP50Ms,r.firstEventP95Ms,r.firstEventP99Ms,r.requestP99Ms,r.meanStreamGapMs,r.worstStreamGapMs,r.estimatedTpotMs,
  ].map(cell).join('')}</tr>`).join('');
  return `<h2>Streaming and load behavior</h2><p>${lead}</p>${streamingRows?`<div style="overflow-x:auto"><table><tr>${streamingHeadings.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>${streamingRows}</table></div>`:''}${inputCacheOutputTable(run,rows)}${arrivalTable(run)}`;

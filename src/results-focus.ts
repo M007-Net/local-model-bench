@@ -57,9 +57,9 @@ const failures:FocusColumn={header:'Failures',cell:r=>`${r.failures}/${r.request
 const prefillColumns=(run:Run):FocusColumn[]=>[
  identity,concurrency,
  {header:'Marginal client estimate',title:'A slope estimated from repeated paired short and long prompts. It removes the estimated fixed request overhead under the calibration model; the overhead is not guaranteed to be isolated true cost.',
-  cell:(r,n)=>{const v=carried(r,'prefillCalibratedTps')??calibrationFor(run,r.modelKey,r.mtpDepth)?.marginalTps;return v==null?'—':n(v,0)+' tok/s';}},
+  cell:(r,n)=>{const v=carried(r,'prefillCalibratedTps')??calibrationFor(run,r.modelKey,r.mtpDepth,r.mtpPMin)?.marginalTps;return v==null?'—':n(v,0)+' tok/s';}},
  {header:'Estimated fixed overhead',title:'Derived from the client-timed prompt pairs under a linear timing model; this is an estimate, not an engine-level measurement of HTTP, tokenization, scheduling, or sampling cost.',
-  cell:(r,n)=>{const v=carried(r,'prefillOverheadMs')??calibrationFor(run,r.modelKey,r.mtpDepth)?.overheadMs;return v==null?'—':n(v,0)+' ms';}},
+  cell:(r,n)=>{const v=carried(r,'prefillOverheadMs')??calibrationFor(run,r.modelKey,r.mtpDepth,r.mtpPMin)?.overheadMs;return v==null?'—':n(v,0)+' ms';}},
  {header:'Prompt-processing rate',title:'Endpoint-specific prompt-processing metric; source coverage identifies whether it was server-reported or client-estimated. Spread is sample standard deviation; CV is relative spread.',
   cell:(r,n)=>`${n(r.prefillMean??r.estimatedPrefillTps)} ± ${n(r.prefillSd)} tok/s · CV ${r.prefillCv==null?'—':n(r.prefillCv*100,1)+'%'} · n=${r.prefillN??'?'}, missing ${r.prefillMissing??'?'}`},
  {header:'Prompt timing source coverage',title:'Reported per-request source labels, including legacy or unavailable provenance.',cell:r=>r.prefillMethods??'Source unspecified'},
@@ -74,6 +74,7 @@ const prefillColumns=(run:Run):FocusColumn[]=>[
 // rate, what speculative decoding did to it, and what happens to both under concurrency.
 const generationColumns:FocusColumn[]=[
  identity,concurrency,
+ {header:'Draft p-min',cell:r=>r.mtp==='off'?'—':r.mtpPMin===null?'Unknown (legacy)':String(r.mtpPMin)},
  {header:'MTP',title:'How many tokens the model’s own prediction heads drafted ahead before the main model verified them. Depth is fixed when the model is loaded.',
   cell:r=>r.mtpDepth===null?String(r.mtp):mtpDepthText(r.mtpDepth)},
  {header:'Reported generation tok/s',title:'Endpoint-reported generation rate. Source coverage identifies provider and method. Spread is sample standard deviation; CV is relative spread.',cell:(r,n)=>`${n(r.generationMean??r.generationTps)} ± ${n(r.generationSd)} tok/s · CV ${r.generationCv==null?'—':n(r.generationCv*100,1)+'%'} · n=${r.generationN??'?'}, missing ${r.generationMissing??'?'}`},
@@ -129,6 +130,6 @@ export const focusBlurb=(focus:ResultsFocus):string=>
 // rather than an unexplained number.
 export function perUserRatio(rows:ChartRow[],r:ChartRow):number|null{
  if(r.concurrency===1)return 1;
- const base=rows.find(x=>x.modelKey===r.modelKey&&x.testId===r.testId&&x.mtpDepth===r.mtpDepth&&x.concurrency===1);
+ const base=rows.find(x=>x.modelKey===r.modelKey&&x.testId===r.testId&&x.mtpDepth===r.mtpDepth&&x.mtpPMin===r.mtpPMin&&x.concurrency===1);
  return base?.generationTps&&r.generationTps?r.generationTps/base.generationTps:null;
 }
