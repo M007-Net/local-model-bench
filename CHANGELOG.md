@@ -6,6 +6,129 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.21.2 — 2026-10-13
+
+### Added
+
+- Separate Harness Evaluation on the Agents page, preserving Agent Worker Sweep.
+- Real Mini-SWE-Agent 2.4.6 and OpenCode 1.19.0 adapters, restricted Docker task containers, a stdio inference relay and independent objective verification across eight deterministic tasks.
+- Multiple model/harness/trial configuration, bounded traces, per-trial outcomes, comparisons, cancellation, separate SQLite history and JSON/CSV/Markdown exports.
+- Docker/web packaging of the current desktop UI and benchmark features. Web harness execution is explicitly disabled until a trusted sandbox controller exists; no Docker socket is mounted.
+
+### Verified
+
+- Both real harnesses attempted the same repair with local LM Studio; Mini-SWE-Agent passed and OpenCode failed objective verification. Single-task observations do not establish a general ranking.
+- Desktop build, TypeScript and 447 tests passed with three optional integrations skipped. Actual sandbox cancellation/timeout and desktop history/export checks passed separately.
+
+## 1.21.1 — 2026-10-11
+
+### Changed
+
+- New Unlimited reasoning runs disable thinking, output and client timeout limits. LM Studio shifts the middle of full context while retaining the question. Existing runs retain their recorded shared limits.
+- Optional consecutive-mistake stopping applies independently to each model and reasoning setting, resets on correct answers, and records whether a setting stopped on mistakes or exhausted its question pool.
+- Results and exports show stop conditions and distinguish intentional skipped work. Paired answers remain available when settings cover different subsets.
+
+## 1.21.0 — 2026-10-10
+
+### Added
+
+- Reasoning comparison within Quality only: editable thinking budgets and effort modes, identical objective questions, repeated attempts, and per-model baselines.
+- LM Studio structured-chat SDK thinking-budget controls and llama.cpp request controls, with recorded capability and confirmation evidence.
+- Accuracy, token, and duration charts; paired final-answer change filters; separate reasoning settings in history and CSV/JSON/Markdown/HTML reports.
+- Deterministic provider, runner, report, browser, and packaged-app verification without real-model inference.
+
+### Fixed
+
+- Comparison output limits leave room for final answers and apply consistently across objective packs. Failures and truncated comparison responses count as misses.
+- Retry responses preserve their reasoning setting and repeat; unsupported settings and unattempted work remain distinct from measured failures.
+
+## 1.19.0 — 2026-09-22
+
+### Added
+
+- Client-observed first output and streaming-gap measurements, with per-request timing and p50/p95/p99 summaries. Reports clearly distinguish stream chunks from tokens.
+- Duration-based sustained concurrency tests that refill active request slots, then drain in-flight requests. The Results screen reports the actual completed requests and timing distribution.
+- Approximate input-context sweeps for speed-only runs, with requested and actual token counts kept separate. Results, history filters, CSV, Markdown, JSON, and graph reports retain the target.
+
+### Verified
+
+- Fixture UI covered 71 sustained requests across four context/concurrency combinations; live llama.cpp verification covered a real served Gemma 4 model.
+
+## 1.18.2 — 2026-09-21
+
+### Fixed
+
+- Read llama.cpp model size, quantization, and context metadata when the server supplies it.
+- Skip malformed and duplicate compatible model entries.
+- Exclude selected external models from the other-loaded-model warning.
+- Show clean connection errors and dismiss success notices automatically.
+- Bring active benchmark progress into view when a run starts.
+
+## 1.18.1 — 2026-09-21
+
+### Fixed
+
+- Retries require the original endpoint and provider, preventing empty retries after switching servers.
+- Compatible judges can grade historical MTP runs; grades retain endpoint provenance.
+- Regrading preserves benchmark GPU telemetry and original failure details.
+- Switching endpoints clears the previous judge selection.
+- Packaging excludes sensor-driver files generated during telemetry checks.
+
+### Verified
+
+- Expanded endpoint fault, credential, export, persistence, and desktop regression coverage.
+- Live Gemma 4 12B inference passed through native and compatible LM Studio APIs.
+
+## 1.18.0 — 2026-09-20
+
+### Added
+
+- An explicit inference-provider choice for LM Studio, llama.cpp, and
+  OpenAI-compatible servers. Compatible connections discover server-provided
+  models and use streaming chat completions without the LM Studio CLI.
+- A clearer connection workflow and provider-aware model and benchmark screens.
+
+### Changed
+
+- Server-managed connections leave models loaded and keep load-time controls on
+  the server. Local LM Studio retains its managed loading and verification.
+- Endpoint documentation now explains local versus remote requests, server-owned
+  settings, and the limits of client timing and local GPU telemetry. Installation
+  examples use the downloaded release version instead of an outdated filename.
+
+## 1.17.0 — 2026-09-18
+
+### Added
+
+- **The agent sweep says what it measured, and can measure a model you already have loaded.**
+
+  A saved sweep now carries a **Model under test** panel read from LM Studio's own record when the
+  sweep started: quantization, parameters, architecture, format, file size, the model's context
+  limit, vision support, the instance identifier and the context and parallel slots it was loaded
+  with. Anything LM Studio does not report stays unreported rather than being guessed from the model
+  name. The quantization also appears in the header strip, in the CSV, in the Markdown export and in
+  the HTML report, so a sweep filed away for later still says which file produced it.
+
+  **Use a model already loaded in LM Studio** is now a choice beside loading one for the sweep.
+  Nothing about a chosen instance is changed — not its context, its parallel slots or its cache — and
+  it is left loaded when the sweep ends. If the sweep asks for more workers than that instance serves
+  at once, the run log says so plainly: the flattening above that point is LM Studio's queue rather
+  than this machine's ceiling, and the two mean different things.
+
+### Changed
+
+- **The KV cache now defaults to q4_0 for both halves, with flash attention on.** A sweep loads one
+  instance with a parallel slot per worker, so the cache is precisely the part of the memory that
+  grows with the worker count: at 32 workers an f16 cache is four times the size of a q4_0 one, and
+  that is usually what decides whether the highest worker counts stay on the GPU or quietly spill
+  into system RAM and measure something else entirely. K and V can be set independently, as on the
+  Run screen. A quantized cache with flash attention off is refused before the load, because
+  llama.cpp cannot do it and LM Studio's refusal names neither setting. A cache type LM Studio did
+  not actually apply fails the sweep before a single turn is measured.
+
+  This does not apply when attaching to an instance that was already loaded: that instance keeps
+  whatever it was loaded with, and the sweep reports it rather than changing it.
+
 ## 1.16.0 — 2026-09-18
 
 ### Added

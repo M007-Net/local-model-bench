@@ -4,18 +4,24 @@ import { renameSync } from 'node:fs';
 import type { Run, RunSummary, Sample, Wave, TestCase } from '../src/types';
 import type { BenchmarkPack } from '../src/benchmarks';
 import type { AgenticPoint, AgenticRun, AgenticSummary } from '../src/agentic';
+import type {HarnessRun,HarnessTrial,HarnessSummary} from '../src/harness';
 // One unreadable row must not take the whole list with it. A write interrupted by a
 // power loss leaves a single truncated doc; parsing the batch in one expression would
 // make every saved run unreachable because of it.
 function docs<T>(rows:{doc:unknown}[]):T[]{const out:T[]=[];for(const r of rows){try{out.push(JSON.parse(String(r.doc)) as T);}catch{}}return out;}
 export class Store {
  db:DatabaseSync;
+ private harnessReady=false;
  // A database that cannot be opened at all - a corrupt file, a leftover -wal from a
  // killed process, a half-written header - would otherwise stop the app permanently,
  // with no window to say why. Move it aside and start clean, keeping the old file so
  // nothing is destroyed and it can still be recovered by hand.
  static open(file:string):Store{
   try{return new Store(file);}catch(error){
+   // Only SQLite corruption/not-a-database errors justify moving user data.
+   // Locks, permissions and I/O failures must leave the original database alone.
+   const code=(error as {errcode?:number}).errcode;
+   if(code===undefined||![11,26].includes(code&255))throw error;
    const kept=`${file}.corrupt-${new Date().toISOString().replace(/[:.]/g,'-')}`;
    for(const suffix of ['','-wal','-shm']){try{renameSync(file+suffix,kept+suffix);}catch{}}
    const store=new Store(file);
@@ -23,7 +29,13 @@ export class Store {
    return store;
   }
  }
- constructor(file:string){this.db=new DatabaseSync(file);this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tests(id TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS samples(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS waves(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, doc TEXT NOT NULL); CREATE INDEX IF NOT EXISTS samples_run ON samples(run_id); CREATE INDEX IF NOT EXISTS waves_run ON waves(run_id); CREATE TABLE IF NOT EXISTS model_profiles(key TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS benchmark_packs(id TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agentic_runs(id TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agentic_points(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, workers INTEGER NOT NULL, doc TEXT NOT NULL); CREATE INDEX IF NOT EXISTS agentic_points_run ON agentic_points(run_id); PRAGMA user_version=4;');}
+ constructor(file:string){this.db=new DatabaseSync(file);try{this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tests(id TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS samples(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS waves(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, doc TEXT NOT NULL); CREATE INDEX IF NOT EXISTS samples_run ON samples(run_id); CREATE INDEX IF NOT EXISTS waves_run ON waves(run_id); CREATE TABLE IF NOT EXISTS model_profiles(key TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS benchmark_packs(id TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agentic_runs(id TEXT PRIMARY KEY, doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agentic_points(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, workers INTEGER NOT NULL, doc TEXT NOT NULL); CREATE INDEX IF NOT EXISTS agentic_points_run ON agentic_points(run_id); PRAGMA user_version=4;');}catch(error){this.db.close();throw error;}}
+ private harnessSchema(){if(this.harnessReady)return;this.db.exec('CREATE TABLE IF NOT EXISTS harness_runs(id TEXT PRIMARY KEY,doc TEXT NOT NULL); CREATE TABLE IF NOT EXISTS harness_trials(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,doc TEXT NOT NULL); CREATE INDEX IF NOT EXISTS harness_trials_run ON harness_trials(run_id);');this.harnessReady=true;}
+ saveHarnessRun(run:HarnessRun){this.harnessSchema();const {trials,...doc}=run;this.db.prepare('INSERT OR REPLACE INTO harness_runs VALUES (?,?)').run(run.id,JSON.stringify(doc));}
+ saveHarnessTrial(trial:HarnessTrial){this.harnessSchema();this.db.prepare('INSERT OR REPLACE INTO harness_trials VALUES (?,?,?)').run(trial.id,trial.runId,JSON.stringify(trial));}
+ listHarness():HarnessSummary[]{this.harnessSchema();return docs<HarnessSummary>(this.db.prepare('SELECT doc FROM harness_runs ORDER BY rowid DESC').all() as {doc:unknown}[]);}
+ getHarnessRun(id:string):HarnessRun{this.harnessSchema();const row=this.db.prepare('SELECT doc FROM harness_runs WHERE id=?').get(id);if(!row)throw Error('Harness evaluation not found');return {...JSON.parse(String(row.doc)),trials:docs<HarnessTrial>(this.db.prepare('SELECT doc FROM harness_trials WHERE run_id=? ORDER BY rowid').all(id) as {doc:unknown}[])};}
+ deleteHarnessRun(id:string){this.harnessSchema();this.db.exec('BEGIN');try{this.db.prepare('DELETE FROM harness_trials WHERE run_id=?').run(id);this.db.prepare('DELETE FROM harness_runs WHERE id=?').run(id);this.db.exec('COMMIT');}catch(e){this.db.exec('ROLLBACK');throw e;}}
  // Imported packs live in the database beside the runs that used them, so they survive an app update and an
  // export folder move, and they are never mixed into the packs compiled into the build.
  packs():BenchmarkPack[]{return docs<BenchmarkPack>(this.db.prepare('SELECT doc FROM benchmark_packs ORDER BY rowid').all() as {doc:unknown}[]);}
@@ -61,6 +73,7 @@ export class Store {
   for(const row of rows)if(unfinished.includes(row.status)){row.status='interrupted';row.updated=new Date().toISOString();row.logs.push(message);save(row);}
  }
  recover(){
+  this.reopen(this.listHarness(),['running'],'App closed before evaluation completed. Saved trials retained; incomplete attempts were interrupted.',r=>this.saveHarnessRun({...r,trials:[]}));
   this.reopen(this.list(),['running','grading'],'App closed before completion. Saved results recovered; unfinished requests were not resumed.',r=>this.saveRun({...r,samples:[],waves:[]}));
   this.reopen(this.listAgentic(),['running'],'App closed before the sweep finished. Completed worker counts were kept; the remaining ones were not run.',r=>this.saveAgenticRun({...r,points:[]}));
  }

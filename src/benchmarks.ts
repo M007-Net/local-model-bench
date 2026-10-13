@@ -1,15 +1,28 @@
+import {effectiveReasoningSamples,settingLabel,type ReasoningSetting} from './reasoning-comparison';
 import data from './benchmark-data/packs.json';
+import emailData from './benchmark-data/berkeley-enron.json';
+import emailChallengeData from './benchmark-data/berkeley-enron-challenge.json';
+import infrastructureData from './benchmark-data/infrastructure.json';
+import efficiencyData from './benchmark-data/token-efficiency.json';
+import {tokenEfficiency} from './token-efficiency';
+import {infrastructureId,balancedInfrastructureSelection,infrastructureMetrics} from './infrastructure';
+import {balancedEmailSelection,emailChallengeId} from './email-challenge';
+import {emailMetrics} from './email-classification';
 import type {Run, RunConfig, TestCase} from './types';
-import {mtpDepthText,sweepSteps} from './mtp-sweep';
+import {mtpDepthText,autoMeasuredSteps,sweepSteps} from './mtp-sweep';
 
 export type BenchmarkSelection={packId:string;count:number;seed:number};
 export type BenchmarkMeta={packId:string;itemId:string;datasetHash:string;protocol:string};
 export type BenchmarkPack={id:string;source:string;datasetHash:string;protocol:string;originalCount:number;count:number;tests:TestCase[];name?:string;scoring?:string;instruction?:string;custom?:boolean;imported?:string;fileName?:string};
 // What a screen needs to describe a pack without carrying its questions across the process boundary.
-export type PackSummary={id:string;name:string;skill:string;meaning:string;limit:string;protocol:string;source:string;datasetHash:string;originalCount:number;count:number;custom:boolean};
-export const builtInPacks=data as unknown as BenchmarkPack[];
+export type PackSummary={id:string;name:string;skill:string;meaning:string;limit:string;protocol:string;source:string;datasetHash:string;originalCount:number;count:number;custom:boolean;authored?:boolean};
+export const builtInPacks=[...data,emailData,emailChallengeData,infrastructureData,efficiencyData] as unknown as BenchmarkPack[];
 export const benchmarkPacks=builtInPacks;
 export const benchmarkDescriptions:Record<string,{name:string;skill:string;meaning:string;limit:string;protocol:string}>={
+ 'token-efficiency':{name:'Token efficiency',skill:'Correct answers versus tokens used',meaning:'60 original tasks across arithmetic, data filtering, state tracking, rule decisions, time calculation and extraction. Compare accuracy with output tokens and correct answers per 1,000 tokens.',limit:'Synthetic tasks with ten variants per family. This measures this suite, not general intelligence. Efficiency depends on tokenizer, reasoning settings and endpoint accounting. Review accuracy alongside efficiency; a cheap wrong answer is still a miss.',protocol:'Six families, ten variants each; seeded balanced nested sampling; SHA-256 fingerprint; strict complete JSON equality. No model judge or candidate execution. Failures and truncated responses miss. Warm-ups excluded. Missing token counts make efficiency unavailable; completion counts include reasoning when the endpoint reports it in that total.'},
+ 'infrastructure-reasoning':{name:'Infrastructure reasoning',skill:'Networking, systems, availability and incident analysis',meaning:'Can it correctly calculate and diagnose multi-part infrastructure scenarios? 180 original cases cover 18 domains with deterministic answer checks and balanced sampling.',limit:'Original synthetic reasoning suite, not a published benchmark or a certification. Ten parameter variants per family share a template. Scores do not prove live configuration, command execution, vendor syntax, or production administration skill. All fields must be correct to pass; wrong, malformed, failed and truncated answers are misses.',protocol:'18 domains, 10 cases each; SHA-256 fingerprint; seeded balanced round-robin selection; strict JSON equality independent of object key order, with array order fixed. No AI judge and no candidate command execution. Use all 180 questions for full coverage; category scores and coverage accompany the result.'},
+ 'berkeley-enron-challenge':{name:'Berkeley email challenge',skill:'Email purpose across difficult contexts',meaning:'Can it distinguish all six email purposes in longer messages and threaded conversations? Each category has equal representation.',limit:'Complexity is selected from text length and quoted-thread markers, not model mistakes. These are still consensus human labels. This selected challenge set is not representative of a normal inbox.',protocol:'120 real emails: 20 per category, selected by a fixed complexity rule and deduplicated. Seeded round-robin selection keeps category counts within one of each other. Accuracy, six-category macro-F1, per-category scores and confusion counts; no model judge.'},
+ 'berkeley-enron':{name:'Berkeley email classification',skill:'Understanding email purpose',meaning:'Can it classify a real email as business, personal, professional relationships, logistics, employment, or document collaboration?',limit:'This is a historical Enron corpus with imperfect human annotations. Only full emails up to 16,000 characters with one nonempty genre and at least two agreeing annotation votes are included. It does not test urgency, spam, action extraction, or modern inbox generalization.',protocol:'UC Berkeley annotated emails; local zero-shot JSON classification. Accuracy and macro-F1 across all six categories (absent categories score zero). No model judge; malformed answers and request failures count as misses.'},
  gsm8k:{name:'GSM8K',skill:'Math word problems',meaning:'Can it turn a short story problem into the right calculation and final answer?',limit:'This tests numerical word problems. It does not establish advanced math ability or explain whether the reasoning was sound.',protocol:'Published test questions; local zero-shot prompt and final-number scoring.'},
  ifeval:{name:'IFEval',skill:'Following instructions',meaning:'Can it follow specific rules such as the number of bullets, required words, JSON format, or a required ending?',limit:'This checks stated constraints, not factual correctness or good writing. The included subset covers 11 supported instruction types.',protocol:'Published prompts unchanged; 205 of 541 prompts with supported constraints. Local strict-style, all-constraints scoring; no loose variant.'},
  cruxeval:{name:'CRUXEval-O',skill:'Understanding Python code',meaning:'Can it read a short Python function and predict the value it returns for a given input?',limit:'This measures code reading and tracing. Even 100 does not mean it can build, debug, or maintain a whole application.',protocol:'Published functions and inputs; 750 of 800 items with JSON-representable outputs. Local JSON answer format; no code execution.'}
@@ -36,19 +49,23 @@ export function validateBenchmark(selection:BenchmarkSelection,packs:BenchmarkPa
 // item IDs, and a larger run with the same seed includes the smaller run's items.
 export function selectBenchmark(selection:BenchmarkSelection,packs:BenchmarkPack[]=builtInPacks):TestCase[]{
  const pack=validateBenchmark(selection,packs),items=[...pack.tests];let seed=selection.seed>>>0;
+ if(pack.id===emailChallengeId)return balancedEmailSelection(items,seed,selection.count);
+ if(pack.id===infrastructureId)return balancedInfrastructureSelection(items,seed,selection.count);
+ if(pack.id==='token-efficiency')return balancedInfrastructureSelection(items,seed,selection.count);
  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
  for(let i=items.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[items[i],items[j]]=[items[j],items[i]];}
  return structuredClone(items.slice(0,selection.count));
 }
 export function benchmarkConfig(current:RunConfig,selection:BenchmarkSelection,packName:string):RunConfig{
- return {...current,benchmark:selection,name:`${packName} · ${selection.count} questions`,mode:'quality',testIds:[],preset:'Custom',concurrency:[1],waves:1,maxTokens:2048,contextLength:Math.max(current.contextLength,8192),temperature:0,judgeModel:''};
+ const challenge=selection.packId===emailChallengeId||selection.packId===infrastructureId;
+ return {...current,benchmark:selection,name:`${packName} · ${selection.count} questions`,mode:'quality',loadProfile:'waves',testIds:[],preset:'Custom',concurrency:[1],waves:1,maxTokens:challenge?8192:2048,contextLength:Math.max(current.contextLength,challenge?16384:8192),timeoutSec:challenge?Math.max(current.timeoutSec,600):current.timeoutSec,temperature:0,judgeModel:''};
 }
 // A published pack has a hand-written explanation; an imported one is described from what was imported, so the
 // meaning panel never has to guess what your own questions measure.
 export function describePack(pack:BenchmarkPack):PackSummary{
  const shared={id:pack.id,source:pack.source,datasetHash:pack.datasetHash,originalCount:pack.originalCount,count:pack.count};
  const published=benchmarkDescriptions[pack.id];
- if(published)return {...shared,...published,custom:false};
+ if(published)return {...shared,...published,custom:false,...([infrastructureId,'token-efficiency'].includes(pack.id)?{authored:true}:{})};
  return {...shared,custom:true,name:pack.name||pack.id,skill:'Your own questions',
   meaning:'This pack is whatever you imported. It measures how often a response passes the check you chose for these answers, on these questions.',
   limit:'Nothing here is a published benchmark or a leaderboard score. The questions, the answers, and the scoring rule are yours, so the result describes your test set and nothing wider.',
@@ -74,15 +91,25 @@ export function benchmarkRows(run:Run){
  // An MTP sweep runs the whole pack once per prediction depth, so a depth is a separate score
  // with its own expected question count. Runs that did not sweep have a single depth of null,
  // which matches every response and leaves their rows exactly as they were.
- const depths=sweepSteps(run.config).map(s=>s.depth);
- return run.config.modelKeys.flatMap(key=>depths.flatMap(depth=>run.config.concurrency.map(concurrency=>{
-  const samples=run.samples.filter(s=>!s.warmup&&s.modelKey===key&&s.concurrency===concurrency&&ids.has(s.testId)&&(depth===null||s.mtpTokens===depth));
-  const passed=samples.filter(s=>s.status==='completed'&&s.objective.score===100).length;
+ const steps=run.config.mtpAutoFind?autoMeasuredSteps(run.samples):sweepSteps(run.config);
+ const settingsFor=(key:string):(ReasoningSetting|undefined)[]=>{
+  if(!run.config.reasoningComparison)return [undefined];
+  const saved=run.modelInfo['reasoning:'+key] as {settings?:ReasoningSetting[]}|undefined;
+  return saved?.settings??[...new Map(run.samples.filter(s=>s.modelKey===key&&s.reasoningSetting).map(s=>[s.reasoningSetting!.id,s.reasoningSetting!])).values()];
+ };
+ const source=run.config.reasoningComparison?effectiveReasoningSamples(run):run.samples;
+ return run.config.modelKeys.flatMap(key=>settingsFor(key).flatMap(reasoningSetting=>steps.flatMap(step=>run.config.concurrency.map(concurrency=>{
+  const depth=step.depth;const samples=source.filter(s=>!s.warmup&&s.modelKey===key&&s.concurrency===concurrency&&(!reasoningSetting||s.reasoningSetting?.id===reasoningSetting.id)&&(s.mtpPMin??null)===(step.pMin??null)&&ids.has(s.testId)&&(depth===null||s.mtpTokens===depth));
+  const infrastructure=tests.every(t=>t.benchmark?.packId===infrastructureId);
+  const strictTruncation=!!run.config.reasoningComparison||infrastructure||tests.every(t=>t.benchmark?.packId==='token-efficiency');
+  const passed=samples.filter(s=>s.status==='completed'&&s.objective.score===100&&(!strictTruncation||!s.possibleTruncation)).length;
   const failed=samples.filter(s=>s.status!=='completed').length;
-  const expected=tests.length*run.config.waves*concurrency;
+  const durationBased=run.config.loadProfile==='sustained';
+  const expected=durationBased||run.config.reasoningComparison&&run.config.retryOf?null:run.config.loadProfile==='arrival-rate'?tests.length*Math.ceil((run.config.durationSec??30)*(run.config.arrivalRatePerSecond??1)):tests.length*run.config.waves*concurrency;
   const score=samples.length?passed/samples.length*100:null;
-  return {key,concurrency,depth,mtp:mtpDepthText(depth),passed,attempted:samples.length,expected,failed,score,provisional:samples.length!==expected||run.status!=='completed',truncated:samples.filter(s=>s.possibleTruncation).length,uniqueQuestions:new Set(samples.map(s=>s.testId)).size};
- })));
+  const classification=tests.every(t=>['berkeley-enron',emailChallengeId].includes(t.benchmark?.packId??''))?emailMetrics(run.config.reasoningComparison?samples.map(s=>s.possibleTruncation?{...s,status:'failed' as const}:s):samples,tests):undefined;
+  return {reasoningSetting,reasoningSettingLabel:reasoningSetting?settingLabel(reasoningSetting):undefined,efficiency:tokenEfficiency(samples,passed),infrastructure:infrastructure?infrastructureMetrics(samples,tests):undefined,pMin:step.pMin??null,key,concurrency,depth,mtp:mtpDepthText(depth)+(step.pMin===undefined?'':' · draft p-min '+step.pMin),passed,attempted:samples.length,expected,failed,score,classification,provisional:(!durationBased&&samples.length!==expected)||run.status!=='completed',truncated:samples.filter(s=>s.possibleTruncation).length,uniqueQuestions:new Set(samples.map(s=>s.testId)).size};
+ }))));
 }
 export function sameBenchmarkQuestions(a:Run,b:Run){
  const signature=(r:Run)=>JSON.stringify(r.tests.filter(t=>t.benchmark).map(t=>[t.id,t.benchmark?.datasetHash,t.benchmark?.protocol,t.prompt,t.rules]).sort((x,y)=>String(x[0]).localeCompare(String(y[0]))));

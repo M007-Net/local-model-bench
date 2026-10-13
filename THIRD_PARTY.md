@@ -11,6 +11,7 @@ terms, which travel with any copy you redistribute.
 | GSM8K | Published test data | MIT; `vendor/benchmark-licenses/GSM8K-MIT.txt`; https://github.com/openai/grade-school-math |
 | IFEval | Selected prompts and adapted checks | Apache-2.0; `vendor/benchmark-licenses/IFEval-Apache-2.0.txt`; https://github.com/google-research/google-research/tree/master/instruction_following_eval |
 | CRUXEval | Selected output-prediction data | MIT; `vendor/benchmark-licenses/CRUXEval-MIT.txt`; https://github.com/facebookresearch/cruxeval |
+| UC Berkeley annotated Enron | 950-message consensus genre subset, complete texts | Public research release by the UC Berkeley Enron Email Analysis project; no separate annotation license stated on the source page. Attribution and preparation details: `docs/email-benchmark.md`; https://bailando.berkeley.edu/enron_email.html |
 
 ## Bundled native libraries
 

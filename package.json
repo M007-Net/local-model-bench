@@ -1,7 +1,7 @@
 {
   "name": "local-model-bench",
-  "version": "1.16.0",
-  "description": "Private desktop benchmarks and transparent grading for LM Studio models",
+  "version": "1.21.2",
+  "description": "Desktop benchmarks and transparent grading for LM Studio, llama.cpp, and compatible endpoints",
   "author": "Local Model Bench contributors",
   "license": "MIT",
   "repository": {
@@ -13,6 +13,17 @@
     "url": "https://github.com/M007-Net/local-model-bench/issues"
   },
   "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "dependencies": {
+    "@lmstudio/sdk": "^2.0.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
   "keywords": [
     "lm-studio",
     "benchmark",
@@ -21,12 +32,13 @@
     "windows",
     "local-ai"
   ],
-  "engines": {
-    "node": ">=22"
-  },
-  "type": "module",
-  "main": "dist-electron/main.cjs",
   "scripts": {
+    "benchmark:efficiency:prepare": "node scripts/prepare-token-efficiency.mjs",
+    "qa:efficiency": "node --import tsx scripts/qa-efficiency.mjs",
+    "qa:efficiency:web": "node --import tsx scripts/qa-efficiency-web.mjs",
+    "benchmark:infrastructure:prepare": "node scripts/prepare-infrastructure.mjs",
+    "benchmark:infrastructure:verify": "tsx --test tests/infrastructure.test.ts",
+    "qa:infrastructure": "node --import tsx scripts/qa-infrastructure.mjs",
     "build": "tsc --noEmit && vite build && node scripts/build.mjs && node scripts/licenses.mjs",
     "test": "tsx --test tests/*.test.ts",
     "gpu:check": "tsx scripts/gpu-check.ts",
@@ -36,12 +48,19 @@
     "qa": "node scripts/qa.mjs",
     "qa:agents": "node scripts/qa-agents.mjs",
     "qa:agents:packaged": "node scripts/qa-agents-packaged.mjs",
-    "agents:calibrate": "tsx scripts/agent-calibrate.ts"
-  },
-  "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "lucide-react": "^0.468.0"
+    "agents:calibrate": "tsx scripts/agent-calibrate.ts",
+    "qa:endpoints": "node scripts/qa-endpoints.mjs",
+    "qa:endpoint-matrix": "node scripts/qa-endpoint-matrix.mjs",
+    "qa:live-endpoints": "node scripts/qa-live-endpoints.mjs",
+    "qa:load-profiles": "node scripts/qa-load-profiles.mjs",
+    "benchmark:email": "tsx scripts/email-benchmark.ts",
+    "benchmark:email:prepare": "python scripts/load-email-dataset.py --download && tsx scripts/prepare-email-benchmark.ts && tsx scripts/prepare-email-challenge.ts",
+    "build:web": "tsc --noEmit && vite build && node scripts/build-web.mjs",
+    "start:web": "node dist-web/server.cjs",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "qa:web": "node --import tsx scripts/qa-web.mjs",
+    "qa:reasoning": "node --import tsx scripts/qa-reasoning.mjs",
+    "qa:reasoning:packaged": "node --import tsx scripts/qa-reasoning-packaged.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -89,9 +108,22 @@
         "from": "vendor",
         "to": "vendor",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/*.sys"
         ]
       }
-    ]
-  }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "assets/icon.png",
+      "artifactName": "Local-Model-Bench-${version}-${arch}.${ext}",
+      "maintainer": "Local Model Bench contributors",
+      "syncDesktopName": true
+    }
+  },
+  "desktopName": "local-model-bench.desktop"
 }

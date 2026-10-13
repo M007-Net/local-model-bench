@@ -1,8 +1,10 @@
 import type { TestCase, Objective, Grade, Sample } from '../src/types';
 
 import { parseAnswer, equalAnswer, unfence } from './json-answer';
-import {finalNumber,scoreInstructions,GraderError} from './benchmark-scoring';
-export function objectiveScore(output:string,test:TestCase):Objective {
+import {scoreInstructions,GraderError} from './benchmark-scoring';
+import {numericAnswerKey} from '../src/numeric-answer';
+export function objectiveScore(output:string,test:TestCase,possibleTruncation=false):Objective {
+ if(possibleTruncation&&['token-efficiency','infrastructure-reasoning'].includes(test.benchmark?.packId??''))return {score:0,checks:test.rules.map(r=>({id:r.id,label:r.label,passed:false,detail:'Output limit reached; this benchmark requires a complete, untruncated answer.',weight:r.weight}))};
  const checks=test.rules.map(r=>{
   let passed=false,detail='',unscorable=false;
   try {
@@ -12,7 +14,7 @@ export function objectiveScore(output:string,test:TestCase):Objective {
    const {json:j,fenced}=test.allowCodeFence?unfence(s):{json:s,fenced:false};
    const note=fenced?' (unwrapped from a code fence)':'';
    switch(r.type){
-    case 'final-number': {const n=finalNumber(s);passed=n!==null&&n===Number(r.expected);detail=passed?'Correct final numeric answer':`Expected ${r.expected}; received ${n??'no valid final number'}`;break;}
+    case 'final-number': {const line=s.split(/\r?\n/).at(-1)?.trim()??'';const raw=line.startsWith('####')?line.slice(4).trim():line;const n=numericAnswerKey(raw);passed=n!==null&&n===numericAnswerKey(r.expected??'');detail=passed?'Correct final numeric answer':`Expected ${r.expected}; received ${n===null?'no valid final number':raw}`;break;}
     case 'ifeval': {const result=scoreInstructions(s,JSON.parse(r.expected??'[]'));passed=result.passed;detail=result.detail;break;}
     case 'exact': passed=s===(r.expected??'').trim(); detail=passed?'Exact match':'Does not match the expected answer'; break;
     case 'contains': passed=s.toLocaleLowerCase().includes((r.expected??'').toLocaleLowerCase());detail=passed?'Required text present':'Required text missing';break;

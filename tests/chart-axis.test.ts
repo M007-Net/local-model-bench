@@ -1,6 +1,17 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chartSpecs,defaultXAxis,renderChart,xAxisLabels,xValueOf,type ChartRow} from '../src/charts';
+import {chartSpecs,defaultXAxis,renderChart,legendHtml,xAxisLabels,xValueOf,type ChartRow} from '../src/charts';
+test('history curves connect matching cohorts across depth while keeping other conditions separate',()=>{
+ const rs=[{...sweep(1,40),modelKey:'Cohort label',seriesId:'cohort-a',mtp:'on',mtpPMin:.25},{...sweep(2,48),modelKey:'Cohort label',seriesId:'cohort-a',mtp:'on',mtpPMin:.25},{...sweep(3,20),modelKey:'Cohort label',seriesId:'cohort-b',mtp:'on',mtpPMin:.25}];
+ const svg=renderChart(rs,chartSpecs('objective')[0],'objective','mtpDepth');assert.equal((svg.match(/<polyline/g)??[]).length,1);
+ const legend=legendHtml(rs,'mtpDepth');assert.match(legend,/Cohort label/);assert.ok(!legend.includes('cohort-a'));assert.equal((legend.match(/<span>/g)??[]).length,2);
+});
+test('probability axis and best-mean markers expose the exact measured MTP setting',()=>{
+ const rs=[{...sweep(2,40),mtp:'on',mtpPMin:0},{...sweep(2,48),mtp:'on',mtpPMin:.8,bestObserved:true}];
+ assert.equal(xValueOf(rs[1],'mtpPMin'),.8);
+ const svg=renderChart(rs,chartSpecs('objective')[0],'objective','mtpPMin');
+ assert.match(svg,/Minimum draft probability/);assert.match(svg,/p-min 0.8/);assert.match(svg,/data-best-measured="true"/);
+});
 
 // A sweep run at one concurrency level: the case where the old axis had nothing to spread along.
 const sweep=(depth:number,gen:number):ChartRow=>({

@@ -1,4 +1,5 @@
 import {summaries} from './export';
+import {effectiveReasoningSamples} from '../src/reasoning-comparison';
 import {profilesFor,type ModelProfile} from '../src/model-profile';
 import {familyOf,promptSizeOf,quantTier,sizeBucket,sizeLabel,type HistoryRow} from '../src/history';
 import type {Model,Run,Sample} from '../src/types';
@@ -9,14 +10,14 @@ import {calibrationFor} from '../src/prefill';
 // came from, what the model was, and the counts and durations behind each average.
 // The MTP depth is part of the key for the same reason it is part of a summary row: one run can
 // hold several depths, and pooling them would average a setting against itself.
-const groupKey=(s:Pick<Sample,'modelKey'|'testId'|'concurrency'>,depth:number|null)=>JSON.stringify([s.modelKey,s.testId,s.concurrency,depth]);
+const groupKey=(s:Pick<Sample,'modelKey'|'testId'|'concurrency'> & {mtpPMin?:number|null;reasoningSettingId?:string|null;reasoningSetting?:Sample['reasoningSetting']|null},depth:number|null)=>JSON.stringify([s.modelKey,s.testId,s.concurrency,depth,s.mtpPMin??null,s.reasoningSetting?.id??s.reasoningSettingId??null]);
 export function historyRows(runs:Run[],saved:Record<string,ModelProfile>):HistoryRow[]{
  return runs.flatMap(run=>{
   const profiles=profilesFor(run,[],saved);
   // One run is one engine, so this is resolved once per run rather than per measurement.
   const backend=backendOf(run);
   const measured=new Map<string,Sample[]>();
-  for(const s of run.samples){if(s.warmup)continue;const key=groupKey(s,s.mtpTokens??null);const list=measured.get(key)??[];list.push(s);measured.set(key,list);}
+  for(const s of run.config.reasoningComparison?effectiveReasoningSamples(run):run.samples){if(s.warmup)continue;const key=groupKey(s,s.mtpTokens??null);const list=measured.get(key)??[];list.push(s);measured.set(key,list);}
   return summaries(run).map(r=>{
    const samples=measured.get(groupKey(r,r.mtpDepth))??[],ok=samples.filter(s=>s.status==='completed');
    const model=(run.modelInfo[r.modelKey] as {model?:Model}|undefined)?.model;
@@ -31,12 +32,12 @@ export function historyRows(runs:Run[],saved:Record<string,ModelProfile>):Histor
     publisher:typeof model?.publisher==='string'?model.publisher:'',architecture:String(model?.architecture??''),
     promptSize:promptSizeOf(r.testId),testKind:test?.kind??'quality',benchmarkPack:test?.benchmark?.packId??null,
     backend:backend.label,backendRef:backend.ref,
-    prefillCalibratedTps:calibrationFor(run,r.modelKey,r.mtpDepth)?.marginalTps??null,
-    prefillOverheadMs:calibrationFor(run,r.modelKey,r.mtpDepth)?.overheadMs??null,
-    reasoning:run.config.reasoning,temperature:run.config.temperature,contextLength:run.config.contextLength,
+    prefillCalibratedTps:calibrationFor(run,r.modelKey,r.mtpDepth,r.mtpPMin)?.marginalTps??null,
+    prefillOverheadMs:calibrationFor(run,r.modelKey,r.mtpDepth,r.mtpPMin)?.overheadMs??null,
+    cacheK:run.config.cacheK??'unknown',cacheV:run.config.cacheV??'unknown',flashAttention:run.config.flashAttention??'unknown',gpu:run.config.gpu,reasoning:r.reasoningSettingLabel??run.config.reasoning,temperature:run.config.temperature,contextLength:run.config.contextLength,
     maxTokens:run.config.maxTokens,waves:run.config.waves,
     completed:ok.length,durationsMs:ok.map(s=>s.metrics.durationMs).filter(n=>Number.isFinite(n)),
-    objectiveCount:ok.filter(s=>s.objective.score!==null).length,
+    objectiveCount:r.reasoningSettingId?samples.length:ok.filter(s=>s.objective.score!==null).length,
     localJudgeCount:graded('local'),externalJudgeCount:graded('external')};
   });
  });

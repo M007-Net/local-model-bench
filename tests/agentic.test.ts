@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WORKLOAD_VERSION,agenticStages,axisMax,comparableWorkload,cpuReading,defaultAgenticConfig,hostStages,modelCallLabel,peakPoint,pointStats,sweepColumns,sweepStats,sweepVerdict,validateAgenticConfig,validateAgenticRun,type AgenticConfig,type AgenticPoint,type AgenticRun,type AgenticTurn} from '../src/agentic';
+import {WORKLOAD_VERSION,agenticStages,axisMax,cacheText,comparableWorkload,cpuReading,defaultAgenticConfig,describeModel,hostStages,modelCallLabel,peakPoint,pointStats,sweepColumns,sweepStats,sweepVerdict,validateAgenticConfig,validateAgenticRun,type AgenticConfig,type AgenticPoint,type AgenticRun,type AgenticTurn} from '../src/agentic';
 import {scalingSvg,stageBreakdown,stageLegendHtml,timelineSvg} from '../src/agentic-charts';
 import {runAgenticSweep,turnPrompt,hostPool,type AgenticAdapter,type AgenticEvent,type HostRunner} from '../electron/agentic-engine';
 import {runStage} from '../electron/agentic-host';
@@ -144,7 +144,9 @@ test('cancelling stops scheduling further worker counts',async()=>{
 test('a model-call sweep records the call as its own segment and keeps a failed call out of the host stages',async()=>{
  const model={key:'m',display_name:'Mock',size_bytes:1,quantization:null,max_context_length:0,type:'llm',loaded_instances:[] as any[]} as unknown as Model;
  let identifier='',calls=0;
+ const cacheCalls:unknown[][]=[];
  const adapter={
+  cacheQuant:(...args:unknown[])=>{cacheCalls.push(args);return ()=>{};},
   models:async()=>identifier?[{...model,loaded_instances:[{id:identifier,config:{context_length:4096*2,parallel:2}}]} as unknown as Model]:[model],
   cli:async(_s:unknown,args:string[])=>{identifier=args[args.indexOf('--identifier')+1];return '';},
   infer:async()=>{calls++;return calls===3?{output:'',reasoning:'',rawStats:{},metrics:{outputTokens:null,generationTps:null} as any,status:'failed' as const,error:'context exhausted',possibleTruncation:false}:{output:'ok',reasoning:'',rawStats:{},metrics:{outputTokens:9,generationTps:33} as any,status:'completed' as const,possibleTruncation:false};},
@@ -161,6 +163,9 @@ test('a model-call sweep records the call as its own segment and keeps a failed 
  const ok=point.turns.find(t=>t.status==='completed')!;
  assert.equal(ok.outputTokens,9);
  assert.equal(ok.segments.length,1+hostStages.length);
+ // The KV cache a sweep asked for is written before the load and undone straight afterwards.
+ assert.equal(cacheCalls.length,1);
+ assert.deepEqual(cacheCalls[0].slice(1),['q4_0','q4_0',true],'the default sweep quantizes both cache halves and turns flash attention on');
 });
 test('a model that cannot hold the requested slots stops the sweep before any measurement',async()=>{
  const model={key:'m',display_name:'Mock',size_bytes:1,quantization:null,max_context_length:4096,type:'llm',loaded_instances:[] as any[]} as unknown as Model;
@@ -253,6 +258,80 @@ test('an imported sweep is validated field by field and never repaired',()=>{
  const other={...good,environment:{workloadVersion:WORKLOAD_VERSION+1}};
  assert.ok(!comparableWorkload(validateAgenticRun(JSON.parse(JSON.stringify(other)))));
  assert.ok(comparableWorkload({environment:{}}),'sweeps recorded before versioning are not rejected');
+});
+
+test('the KV cache defaults to q4_0, because it is what grows with the worker count',()=>{
+ assert.equal(defaultAgenticConfig.cacheK,'q4_0');
+ assert.equal(defaultAgenticConfig.cacheV,'q4_0');
+ assert.equal(defaultAgenticConfig.flashAttention,'on');
+ assert.equal(cacheText(defaultAgenticConfig),'q4_0 K and V');
+ assert.equal(cacheText({...defaultAgenticConfig,cacheV:'q8_0'}),'q4_0 K \u00b7 q8_0 V');
+ // llama.cpp cannot use a quantized cache without flash attention, so the pairing is refused here
+ // rather than sent to LM Studio to fail after the user has waited for a load.
+ const base=()=>structuredClone({...defaultAgenticConfig,modelCall:'on' as const,modelKey:'m'});
+ assert.throws(()=>validateAgenticConfig({...base(),flashAttention:'off'}),/needs flash attention on/);
+ assert.doesNotThrow(()=>validateAgenticConfig({...base(),cacheK:'f16',cacheV:'f16',flashAttention:'off'}));
+ assert.throws(()=>validateAgenticConfig({...base(),cacheK:'q3_k' as never}),/K cache quantization/);
+ // A sweep attached to something already loaded changes none of its settings, so the pairing that
+ // would matter for a fresh load does not apply to it.
+ assert.doesNotThrow(()=>validateAgenticConfig({...base(),instance:'loaded',instanceId:'x',flashAttention:'off'}));
+ assert.throws(()=>validateAgenticConfig({...base(),instance:'loaded',instanceId:'  '}),/which loaded instance/);
+ assert.throws(()=>validateAgenticConfig({...base(),instance:'elsewhere' as never}),/already loaded in LM Studio/);
+});
+test('a sweep can attach to a model already loaded in LM Studio and leaves it alone',async()=>{
+ const loaded={id:'my-instance',config:{context_length:32768,parallel:2}};
+ const model={key:'m',display_name:'Mock',size_bytes:7.4e9,quantization:{name:'Q4_K_M'},max_context_length:131072,type:'llm',format:'gguf',loaded_instances:[loaded],capabilities:{vision:false}} as unknown as Model;
+ let loads=0,unloads=0,cacheWrites=0;
+ const adapter={
+  cacheQuant:()=>{cacheWrites++;return ()=>{};},
+  models:async()=>[model],
+  cli:async()=>{loads++;return '';},
+  infer:async()=>({output:'ok',reasoning:'',rawStats:{},metrics:{outputTokens:5,generationTps:20} as any,status:'completed' as const,possibleTruncation:false}),
+  api:async()=>{unloads++;return {};}
+ } as unknown as AgenticAdapter;
+ const events:AgenticEvent[]=[];
+ await runAgenticSweep(makeRun({modelCall:'on',modelKey:'m',instance:'loaded',instanceId:'my-instance',turns:2,workers:[1,4],repeats:1}),defaultSettings,new AbortController().signal,e=>events.push(e),{adapter,host:fakeHost(),settleMs:0});
+ assert.equal(finish(events).status,'completed');
+ assert.equal(loads,0,'nothing is loaded when an instance was chosen');
+ assert.equal(unloads,0,'and nothing this app did not load is unloaded');
+ assert.equal(cacheWrites,0,'a loaded instance keeps its own cache setting');
+ const info=(events.find(e=>e.type==='model') as {model:any}).model;
+ assert.equal(info.source,'loaded');
+ assert.equal(info.instanceId,'my-instance');
+ assert.equal(info.quantization,'Q4_K_M');
+ assert.equal(info.instanceConfig.context_length,32768);
+ // Four workers against two server slots is a real experiment, but the plateau would be LM Studio's
+ // queue rather than this machine's, so the run says so instead of leaving it to be misread.
+ const logs=events.filter(e=>e.type==='log').map(e=>(e as {message:string}).message).join(' ');
+ assert.match(logs,/already loaded in LM Studio/);
+ assert.match(logs,/serves 2 at a time/);
+ assert.match(logs,/describes the server, not this machine/);
+});
+test('a sweep refuses an instance that went away or holds another model',async()=>{
+ const model={key:'m',display_name:'Mock',size_bytes:1,quantization:null,max_context_length:0,type:'llm',loaded_instances:[{id:'other',config:{context_length:8192,parallel:1}}]} as unknown as Model;
+ const other={key:'n',display_name:'Another',size_bytes:1,quantization:null,max_context_length:0,type:'llm',loaded_instances:[{id:'wrong-model',config:{context_length:8192,parallel:1}}]} as unknown as Model;
+ const adapter={models:async()=>[model,other],cli:async()=>'',infer:async()=>{throw Error('unreachable');},api:async()=>({})} as unknown as AgenticAdapter;
+ const gone:AgenticEvent[]=[];
+ await runAgenticSweep(makeRun({modelCall:'on',modelKey:'m',instance:'loaded',instanceId:'vanished',turns:1,workers:[1],repeats:1}),defaultSettings,new AbortController().signal,e=>gone.push(e),{adapter,host:fakeHost(),settleMs:0});
+ assert.match(finish(gone).error!,/is loaded in LM Studio any more/);
+ const mismatched:AgenticEvent[]=[];
+ await runAgenticSweep(makeRun({modelCall:'on',modelKey:'m',instance:'loaded',instanceId:'wrong-model',turns:1,workers:[1],repeats:1}),defaultSettings,new AbortController().signal,e=>mismatched.push(e),{adapter,host:fakeHost(),settleMs:0});
+ assert.match(finish(mismatched).error!,/is Another, not the selected Mock/);
+ assert.equal(gone.filter(e=>e.type==='point').length+mismatched.filter(e=>e.type==='point').length,0,'nothing is measured against the wrong model');
+});
+test('the model record says what was measured and invents nothing',()=>{
+ const model={key:'publisher/model-Q4_K_M',display_name:'Model',size_bytes:7.4e9,quantization:{name:'Q4_K_M'},max_context_length:131072,type:'llm',format:'gguf',loaded_instances:[],capabilities:{vision:true}} as unknown as Model;
+ const info=describeModel(model,{...defaultAgenticConfig,instance:'load'},{context_length:8192,parallel:4},'inst');
+ assert.equal(info.quantization,'Q4_K_M');
+ assert.equal(info.sizeBytes,7.4e9);
+ assert.equal(info.format,'gguf');
+ assert.equal(info.vision,true);
+ assert.equal(info.maxContext,131072);
+ assert.equal(info.instanceConfig!.parallel,4);
+ // A model LM Studio reports nothing about stays unreported rather than being read off its name.
+ const bare={key:'x',display_name:'X',size_bytes:0,quantization:null,max_context_length:0,type:'llm',loaded_instances:[]} as unknown as Model;
+ const thin=describeModel(bare,defaultAgenticConfig,null,null);
+ for(const value of [thin.quantization,thin.sizeBytes,thin.format,thin.architecture,thin.maxContext,thin.vision,thin.params,thin.instanceConfig,thin.instanceId])assert.equal(value,null);
 });
 
 test('charts render the measured trace and stay readable with nothing measured',()=>{

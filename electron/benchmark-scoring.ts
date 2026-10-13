@@ -1,5 +1,6 @@
 // Adapted from Google's Apache-2.0 IFEval checks, for the explicitly included
 // subset. See vendor/benchmark-licenses/NOTICE.txt. Never run candidate code.
+import {numericAnswerKey} from '../src/numeric-answer';
 export type Instruction={kind:string;args:Record<string,any>};
 // A grader that cannot run is not the same thing as a model that answered wrongly, and
 // conflating them silently depresses a benchmark score with no way to tell from the
@@ -17,7 +18,7 @@ function words(a:Record<string,any>,key:string):string[]{
 export function finalNumber(output:string):number|null{
  const line=output.trim().split(/\r?\n/).at(-1)?.trim()??'';
  const raw=line.startsWith('####')?line.slice(4).trim():line;
- if(!/^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(raw))return null;
+ if(numericAnswerKey(raw)===null)return null;
  const n=Number(raw.replaceAll(',',''));return Number.isFinite(n)?n:null;
 }
 // The exact set the switch below implements. Exported so a test can be rejected while

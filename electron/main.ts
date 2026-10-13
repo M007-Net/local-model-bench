@@ -1,4 +1,8 @@
-import { app, BrowserWindow, ipcMain, dialog, clipboard, safeStorage, shell } from 'electron';
+import {validateReasoningContext} from '../src/reasoning-comparison';
+import {assertRetryEndpoint} from './run-endpoint';
+import {isManagedEndpoint,canManageLocally,validateUrl,endpointIdentity} from '../src/endpoint';
+import { app, BrowserWindow, ipcMain, dialog, clipboard, safeStorage, shell } from './platform';
+import {isWeb,publish,startWebPanel} from './platform';
 import { Worker } from 'node:worker_threads';
 import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -12,7 +16,9 @@ import { defaultSettings, starterTests, performanceTest } from '../src/defaults'
 import { awaitIndexed, createTextOnly, planTextOnly, removeTextOnly, textOnlyTwins } from './text-only';
 import type { Run, RunConfig, Settings, PublicSettings, SettingsUpdate, TestCase, Sample, Progress } from '../src/types';
 import { cli, listModels, resolveLms } from './lmstudio';
-import { listRuntimes } from './runtime';
+import { listRuntimes,backendOf } from './runtime';
+import {contextWorkloads} from '../src/load-profile';
+import {createBenchmarkEnvironment} from '../src/benchmark-environment';
 import { validateConfig, validateSettings, validateTest } from './validation';
 import { gradingPackage, parseGrade } from './scoring';
 import { exportText } from './export';
@@ -30,21 +36,60 @@ import {builtInPacks,describePack,selectBenchmark} from '../src/benchmarks';
 import {buildPack,maxPackBytes,packExtensions,parsePackFile,suggestScoring,type PackDraft,type PackItem} from '../src/benchmark-import';
 import {readFileSync,statSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {HARNESS_PROTOCOL,validateHarnessConfig,validateHarnessModels,selectHarnessTasks,type HarnessConfig,type HarnessRun,type HarnessProgress} from '../src/harness';
+import {harnessTasks} from './harness-tasks';
+import {harnessDiagnostics,dockerCommand} from './harness-sandbox';
+import {harnessText} from './harness-export';
+import type {HarnessEvent} from './harness-engine';
 
 let win:BrowserWindow,store:Store,worker:Worker|null=null,progress:Progress|null=null,activeRun:Run|null=null;
 let agenticWorker:Worker|null=null,agenticProgress:AgenticProgress|null=null;
+let harnessWorker:Worker|null=null,harnessProgress:HarnessProgress|null=null,harnessStarting=false;
+function notifyHarness(){if(isWeb)publish('harnessProgress',harnessProgress);else win?.webContents.send('bench:harnessProgress',harnessProgress);}
+async function newHarnessRun(raw:HarnessConfig){
+ assertIdle();if(isWeb)throw Error("Harness evaluation is available in the desktop application only.");if(!canManageLocally(settings()))throw Error("Harness evaluation currently requires local LM Studio. Select it in Settings.");harnessStarting=true;
+ try{
+  const config=validateHarnessConfig(raw),diagnostic=await harnessDiagnostics();if(!diagnostic.ready)throw Error(diagnostic.message);
+  const models=await listModels(settings());validateHarnessModels(config,models);
+  const now=new Date().toISOString(),run:HarnessRun={id:randomUUID(),created:now,updated:now,status:'running',config,protocol:HARNESS_PROTOCOL,tasks:selectHarnessTasks(harnessTasks,config.taskCount,config.seed),environment:{},trials:[],logs:[]};store.saveHarnessRun(run);
+  harnessProgress={runId:run.id,model:'',harness:'',task:'',trial:0,completed:0,total:config.modelKeys.length*config.harnesses.length*config.taskCount*config.trials,successes:0,failures:0,elapsedMs:0,message:'Preparing evaluation'};notifyHarness();
+  harnessWorker=new Worker(path.join(__dirname,'harness-worker.cjs'),{workerData:{run,settings:settings()}});
+  harnessWorker.on('message',(event:HarnessEvent)=>{try{
+   if(event.type==='trial')store.saveHarnessTrial(event.trial);
+   if(event.type==='run'){Object.assign(run,event.run);store.saveHarnessRun(run);}
+   if(event.type==='progress'){harnessProgress=event.progress;notifyHarness();}
+  }catch(e){run.status='failed';run.error='Could not persist harness event: '+(e as Error).message;harnessWorker?.postMessage('cancel');store.saveHarnessRun(run);}});
+  harnessWorker.on('error',error=>{run.status='failed';run.error=error.message;store.saveHarnessRun(run);});
+  harnessWorker.on('exit',()=>{if(run.status==='running'){run.status='interrupted';store.saveHarnessRun(run);}harnessWorker=null;harnessProgress=null;notifyHarness();});return run.id;
+ }finally{harnessStarting=false;}
+}
+
 // Pooling every run re-reads every saved response, so the result is held until a run, a grade, or a saved
 // model correction actually changes it.
 let historyCache:{fingerprint:string;rows:ReturnType<typeof historyRows>}|null=null;
 let updateState:UpdateState={phase:'idle',info:null,received:0,total:0,file:'',sha256:'',verified:false,error:'',checked:'',current:''};
 let updateBusy=false;
+const clientEnvironment=()=>({platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model?.trim()??null,logicalCpus:os.cpus().length,availableParallelism:os.availableParallelism?.()??os.cpus().length,totalMemoryBytes:os.totalmem(),node:process.versions.node,electron:process.versions.electron,appVersion:app.getVersion()});
+function refreshStructuredEnvironment(run:Run,loaded=false){
+ const entries=Object.entries(run.modelInfo).map(([id,value])=>({id,info:value&&typeof value==='object'?value as Record<string,unknown>:{} }));
+ const models=entries.map(({id,info})=>({id,model:info.model as Record<string,unknown>|undefined})).filter((item):item is {id:string;model:Record<string,unknown>}=>!!item.model&&typeof item.model==='object'&&!Array.isArray(item.model));
+ const effectiveConfigurations:Record<string,Record<string,unknown>|null>={};
+ for(const {id,info} of entries){
+  const model=info.model as Record<string,unknown>|undefined,instance=info.instance as Record<string,unknown>|undefined;
+  const config=instance?.config&&typeof instance.config==='object'&&!Array.isArray(instance.config)?instance.config as Record<string,unknown>:null;
+  if(model&&config)effectiveConfigurations[id]=config;
+ }
+ const runtimeInfo=loaded&&run.environment.serverSettings==='Managed LM Studio instance'?backendOf(run):null;
+ run.environment={...run.environment,...createBenchmarkEnvironment({client:clientEnvironment(),provider:String(run.environment.provider??'lmstudio'),endpoint:String(run.environment.endpoint??''),models,effectiveConfigurations,effectiveRuntime:runtimeInfo?.ref?{label:runtimeInfo.label,ref:runtimeInfo.ref,version:runtimeInfo.version}:null})};
+}
 const updateDir=()=>path.join(app.getPath('temp'),'local-model-bench-update');
-function notifyUpdate(patch:Partial<UpdateState>){updateState={...updateState,...patch};win?.webContents.send('bench:update',updateState);}
+function notifyUpdate(patch:Partial<UpdateState>){updateState={...updateState,...patch};if(isWeb)publish('update',updateState);else win?.webContents.send('bench:update',updateState);}
 // Nothing here runs unless a repository is named and the check is switched on, so the default install makes
 // no outbound request at all.
 async function checkForUpdate(manual:boolean){
  const saved=settings();
  if(!saved.updateRepo.trim()){notifyUpdate({phase:'idle',info:null,error:manual?'Name the GitHub repository to check, as owner/name, in Settings.':''});return updateState;}
+ if(isWeb)return updateState;
  if(!saved.updateCheck&&!manual)return updateState;
  if(updateBusy)return updateState;
  updateBusy=true;notifyUpdate({phase:'checking',error:''});
@@ -76,15 +121,15 @@ function fatal(stage:string,error:unknown){
 process.on('uncaughtException',e=>fatal('An unexpected error stopped the app.',e));
 process.on('unhandledRejection',e=>fatal('An unexpected error stopped the app.',e));
 type StoredSettings=Settings&{encryptedToken?:string};
-function storedSettings():StoredSettings{const saved=store.get<StoredSettings>('settings')??defaultSettings;return {...defaultSettings,...saved,lmsPath:saved.lmsPath||path.join(os.homedir(),'.lmstudio','bin','lms.exe')};}
+function storedSettings():StoredSettings{const saved=store.get<StoredSettings>('settings')??(isWeb?{...defaultSettings,provider:'openai' as const,baseUrl:process.env.LMB_ENDPOINT_URL||'http://host.docker.internal:1234'}:defaultSettings);return {...defaultSettings,...saved,lmsPath:saved.lmsPath||path.join(os.homedir(),'.lmstudio','bin',process.platform==='win32'?'lms.exe':'lms')};}
 // The decrypted token exists only here, on the paths that actually make a
 // request. Everything the window can see goes through publicSettings(), which
 // never decrypts it at all - a renderer compromise cannot read what it was
 // never sent.
 function settings():Settings{const saved=storedSettings();let token='';if(saved.encryptedToken){try{token=safeStorage.decryptString(Buffer.from(saved.encryptedToken,'base64'));}catch{}}const {encryptedToken,...plain}=saved;return {...plain,token};}
 function publicSettings():PublicSettings{const {encryptedToken,token,...plain}=storedSettings();return {...plain,tokenConfigured:!!encryptedToken};}
-function notify(){win?.webContents.send('bench:progress',progress);}
-function notifyAgentic(){win?.webContents.send('bench:agenticProgress',agenticProgress);}
+function notify(){if(isWeb)publish('progress',progress);else win?.webContents.send('bench:progress',progress);}
+function notifyAgentic(){if(isWeb)publish('agenticProgress',agenticProgress);else win?.webContents.send('bench:agenticProgress',agenticProgress);}
 // The packs compiled into the build plus whatever you imported. Imported packs are always last, so a file can
 // never take over the id of a published benchmark.
 const allPacks=()=>[...builtInPacks,...store.packs()];
@@ -94,8 +139,8 @@ let pendingPack:{items:PackItem[];fileName:string}|null=null;
 // A benchmark and an agent sweep both load a model instance and saturate the machine, so only one
 // may ever run. Every place that needs to know about work in progress goes through `busyWorkers`
 // rather than each enumerating the worker variables for itself.
-const busyWorkers=()=>[worker,agenticWorker].filter((w):w is Worker=>!!w);
-function assertIdle(){if(worker)throw Error('A run is active. Cancel it or wait for it to finish.');if(agenticWorker)throw Error('An agent sweep is active. Cancel it or wait for it to finish.');}
+const busyWorkers=()=>[worker,agenticWorker,harnessWorker].filter((w):w is Worker=>!!w);
+function assertIdle(){if(harnessStarting||harnessWorker)throw Error("A harness evaluation is active. Cancel it or wait for it to finish.");if(worker)throw Error('A run is active. Cancel it or wait for it to finish.');if(agenticWorker)throw Error('An agent sweep is active. Cancel it or wait for it to finish.');}
 // Same atomic write as the benchmark export: a failure part-way through a direct write leaves a
 // truncated file that looks complete.
 async function saveExport(title:string,name:string,format:string,render:(format:string)=>string){
@@ -109,9 +154,10 @@ async function saveExport(title:string,name:string,format:string,render:(format:
 }
 async function newAgenticRun(config:AgenticConfig){
  assertIdle();
- const clean=validateAgenticConfig({...defaultAgenticConfig,...config,name:(config.name??'').trim()});
+ const clean=validateAgenticConfig({...defaultAgenticConfig,...config,...(!isManagedEndpoint(settings())?{instance:'loaded' as const,instanceId:config.modelKey,reasoning:'default',cacheK:'off' as const,cacheV:'off' as const}:{}),name:(config.name??'').trim()});
  if(clean.modelCall==='on'){const models=await listModels(settings());const model=models.find(m=>m.key===clean.modelKey);if(!model)throw Error('Selected model no longer available: '+clean.modelKey);clean.modelName=model.display_name;}
  else clean.modelName='';
+ assertIdle();
  const now=new Date().toISOString();
  const run:AgenticRun={id:randomUUID(),created:now,updated:now,status:'running',config:{...clean,name:clean.name||new Date().toLocaleString()},environment:{},logs:[],points:[]};
  store.saveAgenticRun(run);
@@ -120,6 +166,7 @@ async function newAgenticRun(config:AgenticConfig){
  agenticWorker=new Worker(path.join(__dirname,'agentic-worker.cjs'),{workerData:{run,settings:settings(),vendorDir,gpuIntervalMs:1000}});
  agenticWorker.on('message',(event:AgenticEvent)=>{try{
   if(event.type==='point')store.saveAgenticPoint(run.id,event.point);
+  if(event.type==='model'){run.model=event.model;store.saveAgenticRun(run);}
   if(event.type==='log'){run.logs.push(new Date().toLocaleTimeString()+' '+event.message);store.saveAgenticRun(run);}
   if(event.type==='environment'){run.environment=event.environment;store.saveAgenticRun(run);}
   if(event.type==='gpu'){run.gpu=event.gpu;store.saveAgenticRun(run);}
@@ -137,31 +184,54 @@ function launch(run:Run,retries?:Sample[],gradeOnly=false){assertIdle();activeRu
   if(event.type==='sample')store.saveSample(event.sample);
   if(event.type==='wave')store.saveWave(event.wave);
   if(event.type==='grade'){const {sample}=getPair(run.id,event.sampleId);sample.grades.push(event.grade);store.saveSample(sample);}
-  if(event.type==='model'){run.modelInfo[event.key]=event.info;store.saveRun(run);}
+  if(event.type==='model'){run.modelInfo[event.key]=event.info;refreshStructuredEnvironment(run,true);store.saveRun(run);}
   if(event.type==='log'){run.logs.push(new Date().toLocaleTimeString()+' '+event.message);store.saveRun(run);}
-  if(event.type==='gpu'){run.gpu=event.gpu;store.saveRun(run);}
+  if(event.type==='gpu'&&!gradeOnly){run.gpu=event.gpu;store.saveRun(run);}
   if(event.type==='progress'){progress=event.progress;if(event.progress.phase==='grading'&&run.status!=='grading'){run.status='grading';store.saveRun(run);}notify();}
-  if(event.type==='finish'){run.status=gradeOnly?previousStatus:event.status;run.error=event.error;run.updated=new Date().toISOString();store.saveRun(run);}
+  if(event.type==='finish'){run.status=gradeOnly?previousStatus:event.status;if(!gradeOnly)run.error=event.error;run.updated=new Date().toISOString();store.saveRun(run);}
  }catch(e){run.status='failed';run.error='Could not persist benchmark event: '+(e as Error).message;worker?.postMessage('cancel');store.saveRun(run);}});
  worker.on('error',e=>{run.status='failed';run.error=e.message;store.saveRun(run);});
  worker.on('exit',()=>{if(run.status==='running'||run.status==='grading'){run.status='interrupted';store.saveRun(run);}worker=null;activeRun=null;progress=null;notify();});return run.id;
 }
 async function newRun(config:RunConfig,retries?:Sample[],source?:Run){
- assertIdle();validateConfig(config,allPacks());const models=await listModels(settings());for(const key of config.modelKeys)if(!models.some(m=>m.key===key))throw Error('Selected model no longer available: '+key);
- for(const model of models.filter(m=>config.modelKeys.includes(m.key))){assertMtpPlan(model,config);visionArgs(model,config.vision);}
- const tests=source?.tests??[...(config.mode!=='quality'?config.performanceLengths.map(performanceTest):[]),...(config.mode!=='performance'?(config.benchmark?selectBenchmark(config.benchmark,allPacks()):store.tests().filter(t=>config.testIds.includes(t.id))):[]),...(config.vision==='on'?visionTests():[])];
+ assertIdle();
+ if(!source&&config.reasoningComparison&&config.reasoningComparison.unlimitedPolicy===undefined)config={...config,reasoningComparison:{...config.reasoningComparison,unlimitedPolicy:'unbounded'}};
+ if(!isManagedEndpoint(settings()))config={...config,mtp:undefined,mtpSweep:undefined,mtpDraftPMin:undefined,mtpPMinSweep:undefined,mtpAutoFind:undefined,mtpAutoRounds:undefined,mtpPreflight:undefined,mtpDraftTokens:undefined,runtime:undefined,cacheK:undefined,cacheV:undefined,flashAttention:undefined,gpu:'auto',reasoning:'default',vision:undefined};
+ else if(!canManageLocally(settings()))throw Error('Choose OpenAI-compatible for remote LM Studio benchmarks. Local model management cannot control that server.');
+ validateConfig(config,allPacks());const models=await listModels(settings());for(const key of config.modelKeys)if(!models.some(m=>m.key===key))throw Error('Selected model no longer available: '+key);
+ if(config.reasoningComparison)for(const model of models.filter(m=>config.modelKeys.includes(m.key)))validateReasoningContext(config,model,isManagedEndpoint(settings()));
+ if(config.contextSweep?.length){
+  const needed=Math.max(...config.contextSweep)+config.maxTokens+128;
+  for(const model of models.filter(m=>config.modelKeys.includes(m.key))){
+   const capacity=isManagedEndpoint(settings())?config.contextLength:Number(model.loaded_instances[0]?.config?.context_length)||0;
+   if(capacity>0&&needed>capacity)throw Error(`${model.display_name}: the largest approximate input target plus output and overhead needs about ${needed} context tokens, but this ${isManagedEndpoint(settings())?'run requests':'server reports'} ${capacity}. Raise the context limit or lower the sweep target and output limit.`);
+  }
+ }
+ for(const model of models.filter(m=>isManagedEndpoint(settings())&&config.modelKeys.includes(m.key))){assertMtpPlan(model,config);visionArgs(model,config.vision);}
+ const tests=source?.tests??contextWorkloads([...(config.mode!=='quality'?config.performanceLengths.map(performanceTest):[]),...(config.mode!=='performance'?(config.benchmark?selectBenchmark(config.benchmark,allPacks()):store.tests().filter(t=>config.testIds.includes(t.id))):[]),...(config.vision==='on'?visionTests():[])],config);
  if(!tests.length)throw Error('Select at least one available test.');if(config.mode!=='performance'&&!source&&!config.benchmark&&config.testIds.some(id=>!tests.some(t=>t.id===id)))throw Error('A selected test was deleted. Refresh your selection.');
- const now=new Date().toISOString();let runtime='Unavailable';try{runtime=await cli(settings(),['runtime','ls']);}catch{}
- const run:Run={id:randomUUID(),created:now,updated:now,status:'running',config:{...config,name:config.name.trim()||new Date().toLocaleString()},tests,modelInfo:Object.fromEntries(models.filter(m=>config.modelKeys.includes(m.key)).map(model=>[model.key,{model}])),environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,totalMemory:os.totalmem(),node:process.versions.node,electron:process.versions.electron,appVersion:app.getVersion(),runtime,endpoint:settings().baseUrl,judgePrompt:settings().judgePrompt,cachePolicy:'Fresh state, deterministic leading variants; prefix caching cannot be fully disabled through this API.',vision:{requested:config.vision??'auto',projectorToggle,note:noProjectorToggleNote}},logs:[],samples:[],waves:[]};
+ const now=new Date().toISOString();let runtime='Configured on endpoint server';try{if(canManageLocally(settings()))runtime=await cli(settings(),['runtime','ls']);}catch{}
+ const run:Run={id:randomUUID(),created:now,updated:now,status:'running',config:{...config,name:config.name.trim()||new Date().toLocaleString()},tests,modelInfo:Object.fromEntries(models.filter(m=>config.modelKeys.includes(m.key)).map(model=>[model.key,{model}])),environment:{platform:os.platform(),release:os.release(),architecture:os.arch(),cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,totalMemory:os.totalmem(),node:process.versions.node,electron:process.versions.electron,appVersion:app.getVersion(),provider:settings().provider??'lmstudio',serverSettings:isManagedEndpoint(settings())?'Managed LM Studio instance':'Server owns context, cache, GPU and model lifetime',runtime,endpoint:settings().baseUrl,judgePrompt:settings().judgePrompt,cachePolicy:config.reasoningComparison?'Identical benchmark prompts across all settings and repeats; endpoint prefix caching may occur.':'Fresh state, deterministic leading variants; prefix caching cannot be fully disabled through this API.',...(config.reasoningComparison?{reasoningComparison:{protocol:'paired identical questions; rotated setting order across repeats; concurrency one; temperature zero; objective final-answer checks; no judge',unlimited:config.reasoningComparison.unlimitedPolicy==='unbounded'?'No app thinking, output-token, or request-time cap; context shifts preserve the question.':'Legacy: shared total-output and timeout limits apply',stopAfterConsecutiveMisses:config.reasoningComparison.stopAfterConsecutiveMisses??null}}:{}),vision:{requested:config.vision??'auto',projectorToggle,note:noProjectorToggleNote}},logs:[],samples:[],waves:[]};
+ refreshStructuredEnvironment(run);
  if(retries)run.logs.push(`Retry of ${source?.id}. Only failed/cancelled requests are retried with exact original prompts. Partial waves use the actual retried request count; compare separately.`);
  return launch(run,retries);
 }
-function handle(name:string,fn:(...args:any[])=>any){ipcMain.handle('bench:'+name,async(event,...args)=>{if(event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame)throw Error('Untrusted window');return fn(...args);});}
+function handle(name:string,fn:(...args:any[])=>any){ipcMain.handle('bench:'+name,async(event,...args)=>{if(!isWeb&&(event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame))throw Error('Untrusted window');return fn(...args);});}
 if(locked)app.whenReady().then(()=>{
  try{mkdirSync(dataPath,{recursive:true});}catch(e){return fatal('The data folder could not be created.',e);}
  try{store=Store.open(path.join(dataPath,'bench.sqlite'));store.recover();}catch(e){return fatal('The saved benchmark database could not be opened.',e);}
  if(!store.get('seeded')){starterTests.forEach(t=>store.saveTest(t));store.set('seeded',true);}
  if(!store.get('accounting-v1-seeded')){const ids=new Set(store.tests().map(t=>t.id));starterTests.filter(t=>t.category==='Accounting'&&!ids.has(t.id)).forEach(t=>store.saveTest(t));store.set('accounting-v1-seeded',true);}
+ // A crashed container has its own watchdog. Reap only containers belonging to interrupted records in this database.
+ for(const run of store.listHarness().filter(r=>r.status==='interrupted')){
+  dockerCommand(['ps','-aq','--filter',`label=local.model.bench.run=${run.id}`]).then(async result=>{if(!result.code)for(const id of result.stdout.trim().split(/\s+/).filter(id=>/^[a-f0-9]{12,64}$/.test(id)))await dockerCommand(['rm','-f',id]);}).catch(()=>{});
+ }
+ handle('harnessDiagnostics',()=>isWeb?{ready:false,imageId:null,versions:{},message:'Harness execution requires the Windows desktop app and Docker Desktop. This web container has no trusted sandbox controller; execution is disabled. Saved results can still be inspected and exported.'}:harnessDiagnostics());
+ handle('startHarnessRun',(c:HarnessConfig)=>newHarnessRun(c));
+ handle('cancelHarnessRun',()=>{harnessWorker?.postMessage('cancel');});
+ handle('getHarnessRun',(id:string)=>store.getHarnessRun(id));
+ handle('deleteHarnessRun',(id:string)=>{if(harnessProgress?.runId===id)throw Error('Cancel the active evaluation first');store.deleteHarnessRun(id);});
+ handle('exportHarnessRun',(id:string,format:string)=>saveExport('Export harness evaluation',`Local-Model-Bench-harness-${id.slice(0,8)}`,format,f=>harnessText(store.getHarnessRun(id),f)));
  // Tests are seeded once and then belong to the user, so a change to a starter test's scoring has
  // to be migrated rather than assumed. This one carries allowCodeFence onto the stored copies of
  // the three JSON tests whose prompts never asked for an unfenced answer; anything the user has
@@ -171,7 +241,7 @@ if(locked)app.whenReady().then(()=>{
   for(const t of store.tests())if(tolerant.has(t.id)&&!t.allowCodeFence)store.saveTest({...t,allowCodeFence:true});
   store.set('fence-tolerance-v1',true);
  }
- handle('snapshot',()=>({settings:publicSettings(),tests:store.tests(),runs:store.list(),progress,dataPath,packs:allPacks().map(describePack),host:{cpu:os.cpus()[0]?.model?.trim()??'',threads:os.availableParallelism?.()??os.cpus().length},agenticRuns:store.listAgentic(),agenticProgress}));
+ handle('snapshot',()=>({settings:publicSettings(),harnessRuns:store.listHarness(),harnessProgress,tests:store.tests(),runs:store.list(),progress,dataPath,packs:allPacks().map(describePack),host:{cpu:os.cpus()[0]?.model?.trim()??'',threads:os.availableParallelism?.()??os.cpus().length},agenticRuns:store.listAgentic(),agenticProgress}));
  handle('startAgenticRun',(c:AgenticConfig)=>newAgenticRun(c));
  handle('cancelAgenticRun',()=>{agenticWorker?.postMessage('cancel');if(agenticProgress){agenticProgress={...agenticProgress,message:'Cancelling the sweep and unloading any model it loaded…'};notifyAgentic();}});
  handle('getAgenticRun',(id:string)=>store.getAgenticRun(id));
@@ -200,13 +270,13 @@ if(locked)app.whenReady().then(()=>{
  // The installed llama.cpp builds, so a run can name the one it wants. On an AMD card the ROCm
  // and Vulkan builds can differ by a large factor on prompt processing, and which one produced a
  // finished run's numbers is not recoverable afterwards unless the run recorded it.
- handle('runtimes',()=>listRuntimes(settings(),cli));
+ handle('runtimes',()=>canManageLocally(settings())?listRuntimes(settings(),cli):[]);
  handle('startServer',async()=>{assertIdle();const s=settings();const u=new URL(s.baseUrl);resolveLms(s);return cli(s,['server','start','--port',u.port||'1234']);});
  handle('saveSettings',(s:SettingsUpdate)=>{assertIdle();validateSettings(s);const current=storedSettings();
   // An omitted token means "leave the stored one alone". The window never
   // received it and so cannot send it back; only an explicit empty string
   // clears it.
-  let encryptedToken=current.encryptedToken;
+  let encryptedToken=endpointIdentity(current)===endpointIdentity(s)&&(current.provider??'lmstudio')===(s.provider??'lmstudio')?current.encryptedToken:undefined;
   if(s.token!==undefined){
    if(s.token&&!safeStorage.isEncryptionAvailable())throw Error('Windows credential encryption is unavailable. Token was not saved.');
    encryptedToken=s.token?safeStorage.encryptString(s.token).toString('base64'):undefined;
@@ -215,7 +285,7 @@ if(locked)app.whenReady().then(()=>{
   // persist any extra key the window sent and reload it into the Settings object that
   // later reaches the CLI and the HTTP client, and every field added here in future
   // would inherit that hole automatically.
-  store.set('settings',{baseUrl:s.baseUrl,lmsPath:s.lmsPath,timeoutSec:s.timeoutSec,loadTimeoutSec:s.loadTimeoutSec,judgePrompt:s.judgePrompt,updateRepo:s.updateRepo,updateCheck:s.updateCheck,encryptedToken});});
+  store.set('settings',{provider:s.provider??'lmstudio',baseUrl:validateUrl(s.baseUrl),lmsPath:s.lmsPath,timeoutSec:s.timeoutSec,loadTimeoutSec:s.loadTimeoutSec,judgePrompt:s.judgePrompt,updateRepo:s.updateRepo,updateCheck:s.updateCheck,encryptedToken});});
  handle('saveTest',(t:TestCase)=>{validateTest(t);const old=store.tests().find(x=>x.id===t.id);const saved={...t,id:t.id||randomUUID(),kind:'quality' as const,version:old?old.version+1:1};store.saveTest(saved);return saved;});
  handle('deleteTest',(id:string)=>store.deleteTest(id));
  handle('choosePackFile',async()=>{
@@ -246,7 +316,7 @@ if(locked)app.whenReady().then(()=>{
  handle('startRun',(c:RunConfig)=>newRun(c));
  handle('cancel',()=>{worker?.postMessage('cancel');if(progress){progress={...progress,message:'Cancelling requests and unloading the benchmark model…'};notify();}});
  handle('getRun',(id:string)=>store.getRun(id));
- handle('retry',(id:string)=>{const old=store.getRun(id);const retries=old.samples.filter(s=>!s.warmup&&s.status!=='completed');if(!retries.length){if(old.status==='failed'||old.status==='interrupted')return newRun({...old.config,name:old.config.name+' (retry)',retryOf:id},undefined,old);throw Error('No failed requests to retry.');}return newRun({...old.config,name:old.config.name+' (retry)',modelKeys:[...new Set(retries.map(s=>s.modelKey))],retryOf:id},retries,old);});
+ handle('retry',(id:string)=>{const old=store.getRun(id);assertRetryEndpoint(old,settings());const retries=old.samples.filter(s=>!s.warmup&&s.status!=='completed');if(!retries.length){if(old.status==='failed'||old.status==='interrupted')return newRun({...old.config,name:old.config.name+' (retry)',retryOf:id},undefined,old);throw Error('No failed requests to retry.');}return newRun({...old.config,name:old.config.name+' (retry)',modelKeys:[...new Set(retries.map(s=>s.modelKey))],retryOf:id},retries,old);});
  handle('grade',(id:string,judge:string)=>{assertIdle();if(!judge)throw Error('Choose a local judge model.');const run=store.getRun(id);run.config.judgeModel=judge;return launch(run,undefined,true);});
  handle('copyPackage',async(rid:string,sid:string)=>{const {sample,test,run}=getPair(rid,sid);const text=gradingPackage(sample,test,String(run.environment.judgePrompt||settings().judgePrompt));let copied=false;try{await clipboard.writeText(text);copied=(await clipboard.readText())===text;}catch{}return {copied,text};});
  handle('importGrade',(rid:string,sid:string,raw:string,judge:string)=>{if(raw.length>1000000)throw Error('Grade too large');const {run,sample,test}=getPair(rid,sid);sample.grades.push(parseGrade(raw,'external',judge,test.version));store.saveSample(sample);
@@ -271,6 +341,7 @@ if(locked)app.whenReady().then(()=>{
  handle('updateState',()=>updateState);
  handle('checkUpdate',()=>checkForUpdate(true));
  handle('downloadUpdate',async()=>{
+  if(isWeb)throw Error('Update the container image or Linux installation to install updates.');
   const info=updateState.info;
   if(!info)throw Error('Check for an update first.');
   if(updateBusy)throw Error('An update check is already running.');
@@ -287,6 +358,7 @@ if(locked)app.whenReady().then(()=>{
  });
  handle('installUpdate',async()=>{
   assertIdle();
+  if(isWeb||process.platform!=='win32')throw Error('Install updates through your container or Linux package manager.');
   if(updateState.phase!=='ready'||!updateState.file)throw Error('Download and verify the update first.');
   if(!updateState.verified)throw Error('That release published no checksum, so the installer cannot be vouched for. Download it from the release page yourself instead.');
   // The hash taken during the download describes the bytes that arrived. Between then
@@ -306,14 +378,19 @@ if(locked)app.whenReady().then(()=>{
  // A vision projector cannot be detached at load time (see text-only.ts), so the only honest
  // answer is a second, projector-free entry for LM Studio to index. Both actions are refused
  // while a run is in flight, because either changes what LM Studio lists.
- handle('textOnlyPlan',async(key:string)=>{const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);return planTextOnly(model);});
- handle('makeTextOnly',async(key:string)=>{assertIdle();const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);
+ handle('textOnlyPlan',async(key:string)=>{if(!canManageLocally(settings()))throw Error('Text-only copies require local LM Studio.');const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);return planTextOnly(model);});
+ handle('makeTextOnly',async(key:string)=>{assertIdle();if(!canManageLocally(settings()))throw Error('Text-only copies require local LM Studio.');const model=(await listModels(settings())).find(m=>m.key===key);if(!model)throw Error('Downloaded model not found: '+key);
   const folder=createTextOnly(planTextOnly(model));
   if(!await awaitIndexed(folder))throw Error(`The copy was made at ${folder}, but LM Studio has not listed it yet. Refresh the model library in a moment; if it never appears, check that folder is inside LM Studio's models directory.`);
   return folder;});
- handle('textOnlyTwins',()=>textOnlyTwins());
- handle('removeTextOnly',async(folder:string)=>{assertIdle();removeTextOnly(folder);await awaitIndexed(folder,undefined,20000,150,false);});
+ handle('textOnlyTwins',()=>canManageLocally(settings())?textOnlyTwins():[]);
+ handle('removeTextOnly',async(folder:string)=>{assertIdle();if(!canManageLocally(settings()))throw Error('Text-only copies require local LM Studio.');removeTextOnly(folder);await awaitIndexed(folder,undefined,20000,150,false);});
  handle('openData',()=>shell.openPath(dataPath));
+ if(isWeb){
+  updateState={...updateState,current:app.getVersion()};
+  startWebPanel().catch(e=>fatal('The web panel could not start.',e));
+  return;
+ }
  win=new BrowserWindow({width:1440,height:960,minWidth:1050,minHeight:720,title:'Local Model Bench',icon:path.join(__dirname,'../assets/icon.png'),backgroundColor:'#101416',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
  win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',e=>e.preventDefault());
  // Nothing here needs a camera, a microphone, a location, or a USB/serial/HID
@@ -330,4 +407,9 @@ if(locked)app.whenReady().then(()=>{
   // leave that instance loaded in LM Studio.
   Promise.all(busy.map(w=>new Promise<void>(done=>{w.once('exit',()=>done());w.postMessage('cancel');}))).then(()=>win.close());});}});
 });
+if(isWeb){
+ let stopping=false;
+ const stop=()=>{if(stopping)return;stopping=true;Promise.all(busyWorkers().map(w=>new Promise<void>(done=>{w.once('exit',done);w.postMessage('cancel');}))).then(()=>app.quit());};
+ process.on('SIGTERM',stop);process.on('SIGINT',stop);
+}
 app.on('window-all-closed',()=>app.quit());app.on('will-quit',()=>store?.close());

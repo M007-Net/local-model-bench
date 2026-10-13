@@ -21,3 +21,7 @@ outputs/
 .idea/
 .DS_Store
 Thumbs.db
+
+dist-web/
+web-key
+web.lock

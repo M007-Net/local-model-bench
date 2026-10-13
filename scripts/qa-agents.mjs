@@ -18,7 +18,7 @@ try{
 
  await page.getByRole('button',{name:'New agent sweep'}).click();
  await page.getByLabel('Sweep name').fill('QA host-only sweep');
- await page.getByLabel('Agent turns').fill('16');
+ await page.getByLabel('Agent turns',{exact:true}).fill('16');
  await page.getByLabel('Host work scale').fill('2');
  await page.getByLabel('Repeats per worker count').fill('2');
  for(const w of ['16w','32w','48w','64w','96w','128w']){

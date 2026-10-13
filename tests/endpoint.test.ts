@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {isLoopbackUrl, validateUrl} from '../src/endpoint';
+import {isLoopbackUrl, validateUrl, compatibleBaseUrl, endpointIdentity} from '../src/endpoint';
 
 test('an endpoint on another machine is accepted',()=>{
  // The point of the change: the server need not be this PC.
@@ -17,13 +17,19 @@ test('loopback is reported accurately, because the window promises privacy on it
  assert.equal(isLoopbackUrl('not a url'),false,'an unparseable address is not quietly called local');
 });
 
-test('anything that is not an origin is still refused',()=>{
+test('compatible API paths are preserved while credentials and URL parameters are refused',()=>{
  // Credentials belong in the token field, where they are encrypted and never reach the renderer.
  assert.throws(()=>validateUrl('http://user:pass@192.168.1.50:1234'),/API token field/);
  // A path, query or fragment would change what the address means.
- assert.throws(()=>validateUrl('http://192.168.1.50:1234/v1'),/no path, query or fragment/);
- assert.throws(()=>validateUrl('http://192.168.1.50:1234/?x=1'),/no path, query or fragment/);
- assert.throws(()=>validateUrl('http://192.168.1.50:1234/#f'),/no path, query or fragment/);
+ assert.equal(validateUrl('http://192.168.1.50:1234/v1'),'http://192.168.1.50:1234/v1');
+ assert.equal(validateUrl('http://192.168.1.50:1234/v1/'),'http://192.168.1.50:1234/v1');
+ assert.equal(validateUrl('https://models.example.org/openai/api'),'https://models.example.org/openai/api');
+ assert.equal(compatibleBaseUrl('https://models.example.org'),'https://models.example.org/v1');
+ assert.equal(compatibleBaseUrl('https://models.example.org/api'),'https://models.example.org/api');
+ assert.equal(endpointIdentity({provider:'openai',baseUrl:'https://models.example.org'}),endpointIdentity({provider:'openai',baseUrl:'https://models.example.org/v1'}));
+ assert.throws(()=>validateUrl('https://models.example.org/api%2Fother'),/plain API path/);
+ assert.throws(()=>validateUrl('http://192.168.1.50:1234/?x=1'),/no query or fragment/);
+ assert.throws(()=>validateUrl('http://192.168.1.50:1234/#f'),/no query or fragment/);
  assert.throws(()=>validateUrl('file:///etc/passwd'),/http:\/\/ or https:\/\//);
  assert.throws(()=>validateUrl('ftp://192.168.1.50'),/http:\/\/ or https:\/\//);
  assert.throws(()=>validateUrl('192.168.1.50:1234'),/full address/,'a bare host:port is not a URL');

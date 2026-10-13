@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+dist-electron
+dist-web
+outputs
+work
+*.sqlite*
+.env*
+*.log
+vendor/*.sys

@@ -1,0 +1,1570 @@
+{
+  "id": "token-efficiency",
+  "source": "Original Local Model Bench deterministic token-efficiency suite",
+  "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+  "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting",
+  "originalCount": 60,
+  "count": 60,
+  "tests": [
+    {
+      "id": "token-efficiency:arithmetic-1",
+      "name": "Token efficiency · arithmetic-1",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 73 units. Receive 4 boxes of 6 units, sell 29, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":65}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":65}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-1",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-1",
+      "name": "Token efficiency · data-filtering-1",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":0,\"active\":false},{\"id\":\"R1\",\"value\":13,\"active\":true},{\"id\":\"R2\",\"value\":26,\"active\":true},{\"id\":\"R3\",\"value\":39,\"active\":false},{\"id\":\"R4\",\"value\":11,\"active\":true},{\"id\":\"R5\",\"value\":24,\"active\":true},{\"id\":\"R6\",\"value\":37,\"active\":false}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R2\",\"R5\"],\"sum\":50}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R2\",\"R5\"],\"sum\":50}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-1",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-1",
+      "name": "Token efficiency · state-tracking-1",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 11. Repeat exactly 4 times in order: add 2; if x is even divide by 2, otherwise add 5. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":4}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":4}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-1",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-1",
+      "name": "Token efficiency · rule-decisions-1",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":4,\"eligible\":false},{\"name\":\"B\",\"score\":20,\"eligible\":true},{\"name\":\"C\",\"score\":8,\"eligible\":true},{\"name\":\"D\",\"score\":11,\"eligible\":true}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"B\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"B\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-1",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-1",
+      "name": "Token efficiency · time-calculation-1",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 3 at 18:00 and lasts 7 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":4,\"hour\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":4,\"hour\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-1",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-1",
+      "name": "Token efficiency · structured-extraction-1",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a0\",\"status\":\"open\"},{\"id\":\"b0\",\"status\":\"closed\"},{\"id\":\"c0\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a0\",\"c0\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a0\",\"c0\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-1",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-2",
+      "name": "Token efficiency · arithmetic-2",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 80 units. Receive 5 boxes of 7 units, sell 30, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":82}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":82}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-2",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-2",
+      "name": "Token efficiency · data-filtering-2",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":7,\"active\":true},{\"id\":\"R1\",\"value\":20,\"active\":true},{\"id\":\"R2\",\"value\":33,\"active\":false},{\"id\":\"R3\",\"value\":5,\"active\":true},{\"id\":\"R4\",\"value\":18,\"active\":true},{\"id\":\"R5\",\"value\":31,\"active\":false},{\"id\":\"R6\",\"value\":3,\"active\":true}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R1\",\"R4\"],\"sum\":38}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R1\",\"R4\"],\"sum\":38}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-2",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-2",
+      "name": "Token efficiency · state-tracking-2",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 12. Repeat exactly 4 times in order: add 3; if x is even divide by 2, otherwise add 6. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":12}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":12}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-2",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-2",
+      "name": "Token efficiency · rule-decisions-2",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":5,\"eligible\":true},{\"name\":\"B\",\"score\":19,\"eligible\":false},{\"name\":\"C\",\"score\":10,\"eligible\":true},{\"name\":\"D\",\"score\":11,\"eligible\":true}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"D\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"D\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-2",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-2",
+      "name": "Token efficiency · time-calculation-2",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 4 at 18:00 and lasts 10 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":5,\"hour\":4}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":5,\"hour\":4}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-2",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-2",
+      "name": "Token efficiency · structured-extraction-2",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a1\",\"status\":\"open\"},{\"id\":\"b1\",\"status\":\"closed\"},{\"id\":\"c1\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a1\",\"c1\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a1\",\"c1\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-2",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-3",
+      "name": "Token efficiency · arithmetic-3",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 87 units. Receive 6 boxes of 8 units, sell 31, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":101}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":101}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-3",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-3",
+      "name": "Token efficiency · data-filtering-3",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":14,\"active\":true},{\"id\":\"R1\",\"value\":27,\"active\":false},{\"id\":\"R2\",\"value\":40,\"active\":true},{\"id\":\"R3\",\"value\":12,\"active\":true},{\"id\":\"R4\",\"value\":25,\"active\":false},{\"id\":\"R5\",\"value\":38,\"active\":true},{\"id\":\"R6\",\"value\":10,\"active\":true}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R2\",\"R5\"],\"sum\":78}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R2\",\"R5\"],\"sum\":78}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-3",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-3",
+      "name": "Token efficiency · state-tracking-3",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 13. Repeat exactly 4 times in order: add 4; if x is even divide by 2, otherwise add 7. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":20}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":20}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-3",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-3",
+      "name": "Token efficiency · rule-decisions-3",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":6,\"eligible\":true},{\"name\":\"B\",\"score\":18,\"eligible\":true},{\"name\":\"C\",\"score\":12,\"eligible\":false},{\"name\":\"D\",\"score\":11,\"eligible\":true}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"B\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"B\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-3",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-3",
+      "name": "Token efficiency · time-calculation-3",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 5 at 18:00 and lasts 13 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":6,\"hour\":7}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":6,\"hour\":7}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-3",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-3",
+      "name": "Token efficiency · structured-extraction-3",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a2\",\"status\":\"open\"},{\"id\":\"b2\",\"status\":\"closed\"},{\"id\":\"c2\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a2\",\"c2\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a2\",\"c2\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-3",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-4",
+      "name": "Token efficiency · arithmetic-4",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 94 units. Receive 7 boxes of 6 units, sell 32, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":101}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":101}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-4",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-4",
+      "name": "Token efficiency · data-filtering-4",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":21,\"active\":false},{\"id\":\"R1\",\"value\":34,\"active\":true},{\"id\":\"R2\",\"value\":6,\"active\":true},{\"id\":\"R3\",\"value\":19,\"active\":false},{\"id\":\"R4\",\"value\":32,\"active\":true},{\"id\":\"R5\",\"value\":4,\"active\":true},{\"id\":\"R6\",\"value\":17,\"active\":false}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R1\",\"R4\"],\"sum\":66}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R1\",\"R4\"],\"sum\":66}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-4",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-4",
+      "name": "Token efficiency · state-tracking-4",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 14. Repeat exactly 4 times in order: add 2; if x is even divide by 2, otherwise add 8. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":25}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":25}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-4",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-4",
+      "name": "Token efficiency · rule-decisions-4",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":7,\"eligible\":true},{\"name\":\"B\",\"score\":17,\"eligible\":true},{\"name\":\"C\",\"score\":14,\"eligible\":true},{\"name\":\"D\",\"score\":11,\"eligible\":false}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"B\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"B\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-4",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-4",
+      "name": "Token efficiency · time-calculation-4",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 6 at 18:00 and lasts 16 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":7,\"hour\":10}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":7,\"hour\":10}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-4",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-4",
+      "name": "Token efficiency · structured-extraction-4",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a3\",\"status\":\"open\"},{\"id\":\"b3\",\"status\":\"closed\"},{\"id\":\"c3\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a3\",\"c3\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a3\",\"c3\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-4",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-5",
+      "name": "Token efficiency · arithmetic-5",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 101 units. Receive 8 boxes of 7 units, sell 33, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":121}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":121}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-5",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-5",
+      "name": "Token efficiency · data-filtering-5",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":28,\"active\":true},{\"id\":\"R1\",\"value\":0,\"active\":true},{\"id\":\"R2\",\"value\":13,\"active\":false},{\"id\":\"R3\",\"value\":26,\"active\":true},{\"id\":\"R4\",\"value\":39,\"active\":true},{\"id\":\"R5\",\"value\":11,\"active\":false},{\"id\":\"R6\",\"value\":24,\"active\":true}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R4\",\"R0\",\"R3\",\"R6\"],\"sum\":117}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R4\",\"R0\",\"R3\",\"R6\"],\"sum\":117}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-5",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-5",
+      "name": "Token efficiency · state-tracking-5",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 15. Repeat exactly 4 times in order: add 3; if x is even divide by 2, otherwise add 9. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":30}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":30}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-5",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-5",
+      "name": "Token efficiency · rule-decisions-5",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":8,\"eligible\":false},{\"name\":\"B\",\"score\":16,\"eligible\":true},{\"name\":\"C\",\"score\":16,\"eligible\":true},{\"name\":\"D\",\"score\":11,\"eligible\":true}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"B\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"B\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-5",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-5",
+      "name": "Token efficiency · time-calculation-5",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 7 at 18:00 and lasts 19 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":8,\"hour\":13}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":8,\"hour\":13}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-5",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-5",
+      "name": "Token efficiency · structured-extraction-5",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a4\",\"status\":\"open\"},{\"id\":\"b4\",\"status\":\"closed\"},{\"id\":\"c4\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a4\",\"c4\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a4\",\"c4\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-5",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-6",
+      "name": "Token efficiency · arithmetic-6",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 108 units. Receive 9 boxes of 8 units, sell 34, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":143}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":143}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-6",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-6",
+      "name": "Token efficiency · data-filtering-6",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":35,\"active\":true},{\"id\":\"R1\",\"value\":7,\"active\":false},{\"id\":\"R2\",\"value\":20,\"active\":true},{\"id\":\"R3\",\"value\":33,\"active\":true},{\"id\":\"R4\",\"value\":5,\"active\":false},{\"id\":\"R5\",\"value\":18,\"active\":true},{\"id\":\"R6\",\"value\":31,\"active\":true}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R0\",\"R3\",\"R6\",\"R2\",\"R5\"],\"sum\":137}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R0\",\"R3\",\"R6\",\"R2\",\"R5\"],\"sum\":137}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-6",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-6",
+      "name": "Token efficiency · state-tracking-6",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 16. Repeat exactly 4 times in order: add 4; if x is even divide by 2, otherwise add 10. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":35}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":35}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-6",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-6",
+      "name": "Token efficiency · rule-decisions-6",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":9,\"eligible\":true},{\"name\":\"B\",\"score\":15,\"eligible\":false},{\"name\":\"C\",\"score\":18,\"eligible\":true},{\"name\":\"D\",\"score\":11,\"eligible\":true}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"C\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"C\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-6",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-6",
+      "name": "Token efficiency · time-calculation-6",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 8 at 18:00 and lasts 22 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":9,\"hour\":16}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":9,\"hour\":16}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-6",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-6",
+      "name": "Token efficiency · structured-extraction-6",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a5\",\"status\":\"open\"},{\"id\":\"b5\",\"status\":\"closed\"},{\"id\":\"c5\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a5\",\"c5\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a5\",\"c5\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-6",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-7",
+      "name": "Token efficiency · arithmetic-7",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 115 units. Receive 10 boxes of 6 units, sell 35, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":137}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":137}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-7",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-7",
+      "name": "Token efficiency · data-filtering-7",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":1,\"active\":false},{\"id\":\"R1\",\"value\":14,\"active\":true},{\"id\":\"R2\",\"value\":27,\"active\":true},{\"id\":\"R3\",\"value\":40,\"active\":false},{\"id\":\"R4\",\"value\":12,\"active\":true},{\"id\":\"R5\",\"value\":25,\"active\":true},{\"id\":\"R6\",\"value\":38,\"active\":false}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R2\",\"R5\"],\"sum\":52}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R2\",\"R5\"],\"sum\":52}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-7",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-7",
+      "name": "Token efficiency · state-tracking-7",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 17. Repeat exactly 4 times in order: add 2; if x is even divide by 2, otherwise add 11. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":22}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":22}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-7",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-7",
+      "name": "Token efficiency · rule-decisions-7",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":10,\"eligible\":true},{\"name\":\"B\",\"score\":14,\"eligible\":true},{\"name\":\"C\",\"score\":20,\"eligible\":false},{\"name\":\"D\",\"score\":11,\"eligible\":true}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"B\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"B\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-7",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-7",
+      "name": "Token efficiency · time-calculation-7",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 9 at 18:00 and lasts 25 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":10,\"hour\":19}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":10,\"hour\":19}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-7",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-7",
+      "name": "Token efficiency · structured-extraction-7",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a6\",\"status\":\"open\"},{\"id\":\"b6\",\"status\":\"closed\"},{\"id\":\"c6\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a6\",\"c6\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a6\",\"c6\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-7",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-8",
+      "name": "Token efficiency · arithmetic-8",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 122 units. Receive 11 boxes of 7 units, sell 36, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":160}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":160}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-8",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-8",
+      "name": "Token efficiency · data-filtering-8",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":8,\"active\":true},{\"id\":\"R1\",\"value\":21,\"active\":true},{\"id\":\"R2\",\"value\":34,\"active\":false},{\"id\":\"R3\",\"value\":6,\"active\":true},{\"id\":\"R4\",\"value\":19,\"active\":true},{\"id\":\"R5\",\"value\":32,\"active\":false},{\"id\":\"R6\",\"value\":4,\"active\":true}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R1\",\"R4\"],\"sum\":40}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R1\",\"R4\"],\"sum\":40}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-8",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-8",
+      "name": "Token efficiency · state-tracking-8",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 18. Repeat exactly 4 times in order: add 3; if x is even divide by 2, otherwise add 12. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":18}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":18}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-8",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-8",
+      "name": "Token efficiency · rule-decisions-8",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":11,\"eligible\":true},{\"name\":\"B\",\"score\":13,\"eligible\":true},{\"name\":\"C\",\"score\":22,\"eligible\":true},{\"name\":\"D\",\"score\":11,\"eligible\":false}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"C\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"C\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-8",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-8",
+      "name": "Token efficiency · time-calculation-8",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 10 at 18:00 and lasts 28 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":11,\"hour\":22}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":11,\"hour\":22}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-8",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-8",
+      "name": "Token efficiency · structured-extraction-8",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a7\",\"status\":\"open\"},{\"id\":\"b7\",\"status\":\"closed\"},{\"id\":\"c7\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a7\",\"c7\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a7\",\"c7\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-8",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-9",
+      "name": "Token efficiency · arithmetic-9",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 129 units. Receive 12 boxes of 8 units, sell 37, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":185}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":185}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-9",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-9",
+      "name": "Token efficiency · data-filtering-9",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":15,\"active\":true},{\"id\":\"R1\",\"value\":28,\"active\":false},{\"id\":\"R2\",\"value\":0,\"active\":true},{\"id\":\"R3\",\"value\":13,\"active\":true},{\"id\":\"R4\",\"value\":26,\"active\":false},{\"id\":\"R5\",\"value\":39,\"active\":true},{\"id\":\"R6\",\"value\":11,\"active\":true}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R5\",\"R0\"],\"sum\":54}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R5\",\"R0\"],\"sum\":54}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-9",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-9",
+      "name": "Token efficiency · state-tracking-9",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 19. Repeat exactly 4 times in order: add 4; if x is even divide by 2, otherwise add 13. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":8}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":8}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-9",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-9",
+      "name": "Token efficiency · rule-decisions-9",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":12,\"eligible\":false},{\"name\":\"B\",\"score\":12,\"eligible\":true},{\"name\":\"C\",\"score\":24,\"eligible\":true},{\"name\":\"D\",\"score\":11,\"eligible\":true}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"C\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"C\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-9",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-9",
+      "name": "Token efficiency · time-calculation-9",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 11 at 18:00 and lasts 31 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":13,\"hour\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":13,\"hour\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-9",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-9",
+      "name": "Token efficiency · structured-extraction-9",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a8\",\"status\":\"open\"},{\"id\":\"b8\",\"status\":\"closed\"},{\"id\":\"c8\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a8\",\"c8\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a8\",\"c8\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-9",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:arithmetic-10",
+      "name": "Token efficiency · arithmetic-10",
+      "category": "Arithmetic",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nStart with 136 units. Receive 13 boxes of 6 units, sell 38, then discard 3. Return {\"remaining\": integer}.",
+      "answerKey": "{\"remaining\":173}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"remaining\":173}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "arithmetic-10",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:data-filtering-10",
+      "name": "Token efficiency · data-filtering-10",
+      "category": "Data filtering",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nRecords: [{\"id\":\"R0\",\"value\":22,\"active\":false},{\"id\":\"R1\",\"value\":35,\"active\":true},{\"id\":\"R2\",\"value\":7,\"active\":true},{\"id\":\"R3\",\"value\":20,\"active\":false},{\"id\":\"R4\",\"value\":33,\"active\":true},{\"id\":\"R5\",\"value\":5,\"active\":true},{\"id\":\"R6\",\"value\":18,\"active\":false}]. Select active records with value >= 15. Sort by value descending then id ascending. Return {\"ids\": array of IDs, \"sum\": sum of selected values}.",
+      "answerKey": "{\"ids\":[\"R1\",\"R4\"],\"sum\":68}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"ids\":[\"R1\",\"R4\"],\"sum\":68}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "data-filtering-10",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:state-tracking-10",
+      "name": "Token efficiency · state-tracking-10",
+      "category": "State tracking",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nInteger x starts at 20. Repeat exactly 4 times in order: add 2; if x is even divide by 2, otherwise add 14. Return {\"x\": final integer}.",
+      "answerKey": "{\"x\":59}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"x\":59}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "state-tracking-10",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:rule-decisions-10",
+      "name": "Token efficiency · rule-decisions-10",
+      "category": "Rule decisions",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nCandidates [{\"name\":\"A\",\"score\":13,\"eligible\":true},{\"name\":\"B\",\"score\":11,\"eligible\":false},{\"name\":\"C\",\"score\":26,\"eligible\":true},{\"name\":\"D\",\"score\":11,\"eligible\":true}]. Choose eligible candidate with highest score, ties by name ascending. Return {\"winner\": name}.",
+      "answerKey": "{\"winner\":\"C\"}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"winner\":\"C\"}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "rule-decisions-10",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:time-calculation-10",
+      "name": "Token efficiency · time-calculation-10",
+      "category": "Time calculation",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nA job starts day 12 at 18:00 and lasts 34 hours. Days have 24 hours; day numbers continue indefinitely. Return {\"day\": integer finish day, \"hour\": integer finish hour in 0..23}.",
+      "answerKey": "{\"day\":14,\"hour\":4}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"day\":14,\"hour\":4}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "time-calculation-10",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    },
+    {
+      "id": "token-efficiency:structured-extraction-10",
+      "name": "Token efficiency · structured-extraction-10",
+      "category": "Structured extraction",
+      "version": 1,
+      "kind": "quality",
+      "prompt": "Solve using only the supplied facts. Return only the requested JSON value, without explanation or code fences. All fields must be correct.\n\nSource records: [{\"id\":\"a9\",\"status\":\"open\"},{\"id\":\"b9\",\"status\":\"closed\"},{\"id\":\"c9\",\"status\":\"open\"}]. Return {\"open\": IDs whose status is exactly open in source order, \"closed_count\": integer}.",
+      "answerKey": "{\"open\":[\"a9\",\"c9\"],\"closed_count\":1}",
+      "rubric": "Strict complete JSON equality; no partial credit or model judge.",
+      "maxTokens": 2048,
+      "rules": [
+        {
+          "id": "answer",
+          "label": "Complete correct answer",
+          "type": "json-equal",
+          "expected": "{\"open\":[\"a9\",\"c9\"],\"closed_count\":1}",
+          "weight": 1
+        }
+      ],
+      "benchmark": {
+        "packId": "token-efficiency",
+        "itemId": "structured-extraction-10",
+        "datasetHash": "c7cda24f976ea8cb91b7f4dfd81bbab638752bfc129c7025f8b191f78b9e7843",
+        "protocol": "efficiency-v1; 6 families x 10 variants; balanced nested sampling; strict JSON equality; failures and truncations miss; endpoint token accounting"
+      }
+    }
+  ]
+}

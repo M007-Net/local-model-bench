@@ -1,11 +1,13 @@
+import {performanceSummary} from '../src/performance-summary';
 import {test} from 'node:test';
+import {bestMtpGroups,chartRows} from '../src/history';
 import assert from 'node:assert/strict';
 import {defaultHistoryView,facetOptions,familyOf,groupHistory,matchesHistory,promptSizeOf,quantTier,restoreHistoryView,sizeBucket,sizeLabel,sortGroups,type HistoryRow,type HistoryView} from '../src/history';
 import {historyRows} from '../electron/history';
 import {inferProfile} from '../src/model-profile';
 import {percentile} from '../electron/metrics';
 import type {Metrics,Run,Sample} from '../src/types';
-const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({
+const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({...performanceSummary([]),contextTarget:null,inputTargetTokens:0,requestedOutputLimitTokens:128,actualOutputTokensMean:null,loadProfile:'waves',
  vision:'off',visionEffective:'',visionImagesSent:false,visionProjectorUnloaded:false,visionLimitation:'',
  mtp:'off',mtpDraftTokens:null,mtpDepth:null,draftAcceptance:null,draftMeanLen:null,model:'Gemma 4 12B',modelKey:'gemma-4-12b-it@iq3_xxs',test:'Short prompt throughput',testId:'perf-short',concurrency:1,
  requests:1,failures:0,failureRate:0,generationTps:null,estimatedPrefillTps:null,throughput:null,
@@ -19,8 +21,18 @@ const row=(patch:Partial<HistoryRow>={}):HistoryRow=>({
  promptSize:'short',testKind:'performance',benchmarkPack:null,
  reasoning:'default',temperature:0,contextLength:8192,maxTokens:512,waves:1,
  completed:1,durationsMs:[],objectiveCount:0,localJudgeCount:0,externalJudgeCount:0,
- ...patch});
+ ...patch} as HistoryRow);
 const view=(patch:Partial<HistoryView>={}):HistoryView=>({...defaultHistoryView,...patch});
+test('MTP history pools only identical settings across runs and keeps best means visible',()=>{
+ const base=row({mtp:'on',mtpDepth:2,mtpPMin:0,generationTps:40,requests:2,completed:2});
+ const data=[base,{...base,runId:'repeat',generationTps:44},{...base,runId:'threshold',mtpPMin:.8,generationTps:48},{...base,runId:'different-context',contextLength:16384,generationTps:60}];
+ const groups=groupHistory(data,view({groupBy:'mtpSettings'}));
+ assert.equal(groups.length,3);
+ const repeated=groups.find(g=>g.runs.length===2)!;assert.equal(repeated.generationTps?.value,42);
+ assert.equal(bestMtpGroups(groups).size,2,'different contexts have separate best settings');
+ assert.ok([...bestMtpGroups(groups)].some(k=>groups.find(g=>g.key===k)?.rows[0].mtpPMin===.8));
+ assert.equal(chartRows(groups).length,3);
+});
 test('the family comes from the reported architecture, never from the repackager',()=>{
  assert.equal(familyOf('gemma4','gemma-4-12b-it@iq3_xxs'),'Gemma');
  assert.equal(familyOf('qwen35','qwen3.8-27b@iq3_s'),'Qwen');
@@ -57,6 +69,8 @@ test('size labels and buckets agree with the comparison ranges and never assume 
 test('performance prompt sizes are recognised and other tests stay unlabelled',()=>{
  assert.equal(promptSizeOf('perf-long'),'long');
  assert.equal(promptSizeOf('perf-medium'),'medium');
+ assert.equal(promptSizeOf('perf-context-4096'),'context-4096');
+ assert.equal(promptSizeOf('perf-short-context-512'),'context-512');
  assert.equal(promptSizeOf('gsm8k-17'),null);
  assert.equal(promptSizeOf(undefined),null);
 });
@@ -116,6 +130,16 @@ test('a group that pools more than one condition says so',()=>{
  const byPrompt=groupHistory([row(),row({runId:'r2',promptSize:'long',testId:'perf-long'})],view());
  assert.equal(byPrompt[0].mixed,true);
 });
+test('history filters and mixed-condition summaries preserve context targets and load profiles',()=>{
+ const waves=row({contextTarget:null,loadProfile:'waves'});
+ const sustainedContext=row({contextTarget:512,loadProfile:'sustained',promptSize:'context-512',testId:'perf-context-512'});
+ assert.equal(matchesHistory(sustainedContext,view({contextTargets:['512 tokens'],loadProfiles:['Sustained concurrency']})),true);
+ assert.equal(matchesHistory(waves,view({contextTargets:['512 tokens']})),false);
+ const [mixed]=groupHistory([waves,sustainedContext],view());
+ assert.equal(mixed.mixed,true);
+ assert.deepEqual(mixed.conditions.contextTargets,['512 tokens','No context sweep']);
+ assert.deepEqual(mixed.conditions.loadProfiles,['Fixed request waves','Sustained concurrency']);
+});
 test('regrouping moves rows without losing or duplicating requests',()=>{
  const rows=[row({requests:10}),row({runId:'r2',quantTier:'Q3',quantization:'Q3_K_XL',modelKey:'gemma-4-12b-it@q3_k_xl',requests:6}),row({runId:'r3',family:'Qwen',architecture:'qwen35',kind:'moe',quantTier:'IQ3',modelKey:'qwen3.6-35b-a3b@iq3_xxs',requests:4})];
  const total=(by:'model'|'family'|'quantTier'|'kind')=>groupHistory(rows,view(),{by}).reduce((n,g)=>n+g.requests,0);
@@ -168,4 +192,27 @@ test('saved runs become history rows with their facets, counts, and durations',(
  // A saved correction overrides the inferred architecture for every run it appears in.
  const corrected=historyRows([savedRun()],{'gemma-4-12b-it@iq3_xxs':{totalB:13,activeB:2,kind:'moe',source:'User supplied'}})[0];
  assert.deepEqual([corrected.kind,corrected.sizeLabel],['moe','13B']);
+});
+test('context-sweep history rows retain target and load profile, including legacy defaults',()=>{
+ const run=savedRun();
+ run.config.loadProfile='sustained';
+ run.tests[0]={...run.tests[0],id:'perf-context-2048',name:'Performance · ≈2048 input tokens',contextTokens:2048};
+ run.samples=run.samples.map(s=>({...s,testId:'perf-context-2048',testName:run.tests[0].name,contextTokens:2048}));
+ const [context]=historyRows([run],{});
+ assert.deepEqual([context.promptSize,context.contextTarget,context.loadProfile],['context-2048',2048,'sustained']);
+ const legacy=savedRun();
+ const [old]=historyRows([legacy],{});
+ assert.deepEqual([old.promptSize,old.contextTarget,old.loadProfile],['short',null,'waves']);
+});
+
+
+test('no history grouping keeps same-family models and repeated run measurements separate',()=>{
+ const rows=Array.from({length:8},(_,i)=>row({modelKey:`qwen-34b-${i%4}`,model:'Qwen 34B',family:'Qwen',sizeLabel:'34B',runId:`run-${Math.floor(i/4)}`,generationTps:10+i}));
+ const view={...defaultHistoryView,groupBy:'none' as const};
+ const groups=groupHistory(rows,view);
+ assert.equal(groups.length,8);
+ assert.equal(new Set(groups.map(g=>g.key)).size,8);
+ groups.forEach((g,i)=>{assert.equal(g.rows.length,1);assert.equal(g.generationTps?.value,10+i);});
+ assert.equal(groupHistory(rows,view,{splitConcurrency:true}).length,8);
+ assert.equal(restoreHistoryView(view).groupBy,'none');
 });

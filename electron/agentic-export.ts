@@ -1,16 +1,37 @@
 import type {AgenticRun,PointStats} from '../src/agentic';
-import {agenticStages,hostWorkCaveat,modelCallLabel,stageLabels,sweepColumns,sweepStats,sweepVerdict} from '../src/agentic';
+import {agenticStages,cacheText,hostWorkCaveat,modelCallLabel,stageLabels,sweepColumns,sweepStats,sweepVerdict} from '../src/agentic';
 import {scalingSvg,staticStageLegendHtml,timelineSvg,scalingMetrics,type ScalingMetric} from '../src/agentic-charts';
 import {escapeHtml} from '../src/charts';
 import {cell} from './export';
 
 const num=(v:number|null|undefined,d=2)=>v===null||v===undefined||!Number.isFinite(v)?'Unavailable':v.toFixed(d);
 const column=(s:PointStats,c:typeof sweepColumns[number])=>{const v=c.value(s);return v===null||!Number.isFinite(v)?'Unavailable':v.toFixed(c.digits)+(c.suffix??'');};
-const heading=(run:AgenticRun)=>`${run.created} · status ${run.status} · ${run.config.turns} agent turns per worker count · host work scale ${run.config.hostWorkScale} · model call ${modelCallLabel(run.config)}`;
+const heading=(run:AgenticRun)=>`${run.created} · status ${run.status} · ${run.config.turns} agent turns per worker count · ${run.config.repeats} repeats · host work scale ${run.config.hostWorkScale} · model call ${modelCallLabel(run.config)}`;
+// What the sweep measured, in the words LM Studio reported it. Nothing here is inferred from a name,
+// and anything it did not report is left out rather than filled in.
+const modelFacts=(run:AgenticRun):[string,string][]=>{
+ const m=run.model;
+ if(!m)return [];
+ return ([
+  ['Model',m.displayName],['Model key',m.key],
+  ['Quantization',m.quantization],['Parameters',m.params],['Architecture',m.architecture],['Format',m.format],
+  ['File size',m.sizeBytes?`${(m.sizeBytes/1e9).toFixed(2)} GB`:null],
+  ['Model context limit',m.maxContext?`${m.maxContext.toLocaleString()} tokens`:null],
+  ['Vision',m.vision===null?null:m.vision?'supported':'text only'],
+  ['KV cache',m.source==='loaded'?'set by the instance already loaded':cacheText(run.config)],
+  ['Flash attention',m.source==='loaded'?'set by the instance already loaded':run.config.flashAttention],
+  ['Instance',m.instanceId],
+  ['Instance source',m.source==='loaded'?'already loaded in LM Studio; left loaded':'loaded for this sweep and unloaded afterwards'],
+  ['Loaded context',typeof m.instanceConfig?.context_length==='number'?`${(m.instanceConfig.context_length as number).toLocaleString()} tokens`:null],
+  ['Parallel slots',typeof m.instanceConfig?.parallel==='number'?String(m.instanceConfig.parallel):null]
+ ] as [string,string|null][]).filter((entry):entry is [string,string]=>entry[1]!==null&&entry[1]!==undefined&&entry[1]!=='');
+};
 
 export function agenticRows(run:AgenticRun){
  return sweepStats(run.points).map(s=>({
   run:run.config.name,modelCall:run.config.modelCall,model:modelCallLabel(run.config),
+  modelKey:run.model?.key??'',quantization:run.model?.quantization??'',modelSizeBytes:run.model?.sizeBytes??null,modelFormat:run.model?.format??'',
+  kvCacheK:run.config.modelCall==='on'?run.config.cacheK:'',kvCacheV:run.config.modelCall==='on'?run.config.cacheV:'',flashAttention:run.config.modelCall==='on'?run.config.flashAttention:'',instanceSource:run.config.modelCall==='on'?run.config.instance:'',
   turns:run.config.turns,hostWorkScale:run.config.hostWorkScale,workers:s.workers,lanesUsed:s.lanes,
   wallSeconds:s.wallMs/1000,turnsPerMinute:s.turnsPerMin,speedup:s.speedup,efficiency:s.efficiency,
   meanTurnMs:s.meanTurnMs,meanModelCallMs:s.meanLlmMs,meanHostMs:s.meanHostMs,offGpuSharePercent:s.offGpuShare,
@@ -24,7 +45,7 @@ export function agenticText(run:AgenticRun,format:string){
  if(format==='csv'){const headers=rows.length?Object.keys(rows[0]):['workers','wallSeconds'];return '﻿'+[headers.map(cell).join(','),...rows.map(r=>headers.map(k=>cell((r as any)[k])).join(','))].join('\r\n');}
  if(format!=='md')throw Error('Unsupported export format');
  const stats=sweepStats(run.points);
- return `# ${run.config.name||'Agent worker sweep'}\n\n${heading(run)}\n\n${hostWorkCaveat}\n\n## Sweep points\n\n`+
+ return `# ${run.config.name||'Agent worker sweep'}\n\n${heading(run)}\n\n${hostWorkCaveat}\n\n`+(modelFacts(run).length?`## Model under test\n\n${modelFacts(run).map(([k,v])=>`- ${k}: ${v}`).join('\n')}\n\n`:'')+`## Sweep points\n\n`+
  `| ${sweepColumns.map(c=>c.header).join(' | ')} |\n| ${sweepColumns.map(()=>'---').join(' | ')} |\n`+
  stats.map(s=>`| ${sweepColumns.map(c=>column(s,c)).join(' | ')} |`).join('\n')+
  `\n\n${sweepVerdict(stats,run.config.modelCall)}\n\n## Stage totals\n\n`+
@@ -41,5 +62,5 @@ export function agenticReport(run:AgenticRun){
  const height=Math.max(90,Math.min(420,Math.max(1,...run.points.map(p=>p.lanes))*14+40));
  const timelines=run.points.map(point=>`<article><h3>${point.workers} worker${point.workers===1?'':'s'}</h3><p>${point.turns.length} agent turns · ${point.lanes} lane(s) · wall clock ${num(point.wallMs/1000)} s · axis locked to the slowest worker count in this sweep.</p>${timelineSvg(point,{axisMaxMs:max,height})}</article>`).join('');
  const table=`<table><tr>${sweepColumns.map(c=>`<th>${escapeHtml(c.header)}</th>`).join('')}</tr>${stats.map(s=>`<tr>${sweepColumns.map(c=>`<td>${escapeHtml(column(s,c))}</td>`).join('')}</tr>`).join('')}</table>`;
- return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><title>${escapeHtml(run.config.name||'Agent worker sweep')} — agent sweep report</title><style>body{margin:0;background:#0b1114;color:#e3ebe7;font:14px 'Segoe UI',sans-serif}main{max-width:1320px;margin:auto;padding:40px}h1{font-size:32px;letter-spacing:-.8px}h2{margin-top:38px}h3{margin:0 0 6px;font-size:16px}p{color:#9fb0b6;line-height:1.7}article{padding:22px;background:#111a1e;border:1px solid #223038;border-radius:12px;margin-bottom:18px;break-inside:avoid}svg{width:100%;display:block}.legend{display:flex;flex-wrap:wrap;gap:16px;margin:16px 0 26px;color:#b7c7ca;font-size:12px}.legend span{display:flex;align-items:center;gap:8px}.legend i{width:10px;height:10px;border-radius:3px}table{border-collapse:collapse;font-size:12px;width:100%}td,th{text-align:left;border-bottom:1px solid #223038;padding:9px;overflow-wrap:anywhere}th{color:#8b9aa0;font-weight:600;letter-spacing:.6px;text-transform:uppercase;font-size:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#9fb0b6}@media print{body{background:#fff;color:#16222a}article{background:#fff;border-color:#bbb}p,.legend{color:#3f5059}}</style><main><h1>${escapeHtml(run.config.name||'Agent worker sweep')}</h1><p>${escapeHtml(heading(run))}</p><p>${escapeHtml(hostWorkCaveat)}</p><div class="legend">${staticStageLegendHtml()}</div><h2>Scaling</h2>${charts}<h2>All sweep points</h2><article>${table}<p>${escapeHtml(sweepVerdict(stats,run.config.modelCall))}</p></article><h2>Worker timelines</h2>${timelines}<h2>Environment and log</h2><article><pre>${escapeHtml(JSON.stringify({config:run.config,environment:run.environment},null,2))}</pre><pre>${escapeHtml(run.logs.join('\n')||'No additional messages.')}</pre></article></main></html>`;
+ return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><title>${escapeHtml(run.config.name||'Agent worker sweep')} — agent sweep report</title><style>body{margin:0;background:#0b1114;color:#e3ebe7;font:14px 'Segoe UI',sans-serif}main{max-width:1320px;margin:auto;padding:40px}h1{font-size:32px;letter-spacing:-.8px}h2{margin-top:38px}h3{margin:0 0 6px;font-size:16px}p{color:#9fb0b6;line-height:1.7}article{padding:22px;background:#111a1e;border:1px solid #223038;border-radius:12px;margin-bottom:18px;break-inside:avoid}svg{width:100%;display:block}.legend{display:flex;flex-wrap:wrap;gap:16px;margin:16px 0 26px;color:#b7c7ca;font-size:12px}.legend span{display:flex;align-items:center;gap:8px}.legend i{width:10px;height:10px;border-radius:3px}table{border-collapse:collapse;font-size:12px;width:100%}td,th{text-align:left;border-bottom:1px solid #223038;padding:9px;overflow-wrap:anywhere}th{color:#8b9aa0;font-weight:600;letter-spacing:.6px;text-transform:uppercase;font-size:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#9fb0b6}@media print{body{background:#fff;color:#16222a}article{background:#fff;border-color:#bbb}p,.legend{color:#3f5059}}</style><main><h1>${escapeHtml(run.config.name||'Agent worker sweep')}</h1><p>${escapeHtml(heading(run))}</p><p>${escapeHtml(hostWorkCaveat)}</p><div class="legend">${staticStageLegendHtml()}</div>${modelFacts(run).length?`<h2>Model under test</h2><article><table>${modelFacts(run).map(([k,v])=>`<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join('')}</table></article>`:''}<h2>Scaling</h2>${charts}<h2>All sweep points</h2><article>${table}<p>${escapeHtml(sweepVerdict(stats,run.config.modelCall))}</p></article><h2>Worker timelines</h2>${timelines}<h2>Environment and log</h2><article><pre>${escapeHtml(JSON.stringify({config:run.config,environment:run.environment},null,2))}</pre><pre>${escapeHtml(run.logs.join('\n')||'No additional messages.')}</pre></article></main></html>`;
 }

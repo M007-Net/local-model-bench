@@ -7,8 +7,10 @@ import path from 'node:path';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 const dir=path.resolve('work/pkg-agents');fs.rmSync(dir,{recursive:true,force:true});fs.mkdirSync(dir,{recursive:true});
-const app=await electron.launch({executablePath:path.resolve('outputs/win-unpacked/Local Model Bench.exe'),args:[],env:{...process.env,LMB_DATA_DIR:dir},timeout:60000});
-const page=await app.firstWindow();page.setDefaultTimeout(30000);
+const executable=process.env.LMB_QA_EXECUTABLE||path.resolve(process.platform==='linux'?'outputs/linux-unpacked/local-model-bench':'outputs/win-unpacked/Local Model Bench.exe');
+const app=await electron.launch({executablePath:executable,args:process.platform==='linux'&&process.getuid?.()===0?['--no-sandbox']:[],env:{...process.env,LMB_DATA_DIR:dir},timeout:60000});
+app.process().stderr?.on('data',data=>process.stderr.write(data));
+const page=await app.firstWindow({timeout:60000});page.setDefaultTimeout(30000);
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
  await page.getByRole('heading',{name:'Choose models to benchmark'}).waitFor();
@@ -24,4 +26,4 @@ try{
  assert.ok(run.points[1].wallMs<run.points[0].wallMs,'four workers must beat one inside the packaged app');
  assert.deepEqual(errors,[]);
  console.log(`Packaged agent sweep OK: pool ${run.environment.hostThreads} threads, 1w ${(run.points[0].wallMs/1000).toFixed(2)}s -> 4w ${(run.points[1].wallMs/1000).toFixed(2)}s`);
-}finally{await app.close();}
+}finally{await app.evaluate(({app})=>app.exit(0)).catch(()=>{});}

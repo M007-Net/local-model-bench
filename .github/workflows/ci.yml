@@ -1,4 +1,4 @@
-name: Windows CI
+name: Windows and Linux CI
 
 on:
   push:
@@ -10,6 +10,39 @@ permissions:
   contents: read
 
 jobs:
+  linux-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:web
+      - run: npm run qa:web
+      - run: docker build -t local-model-bench:ci .
+      - run: docker run -d --network host --name lmb-ci -e LMB_WEB_TOKEN=local-bench-qa local-model-bench:ci
+      - run: npm run qa:web
+        env:
+          LMB_QA_PANEL: http://127.0.0.1:8080
+      - run: docker restart lmb-ci
+      - run: npm run qa:web
+        env:
+          LMB_QA_PANEL: http://127.0.0.1:8080
+      - if: always()
+        run: docker stop lmb-ci || true
+
   test-and-build:
     runs-on: windows-latest
     timeout-minutes: 20
