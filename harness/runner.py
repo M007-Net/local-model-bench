@@ -31,7 +31,10 @@ def diagnostic():
     with contextlib.redirect_stdout(sys.stderr):
         from minisweagent.agents.default import DefaultAgent
         from minisweagent.models.litellm_textbased_model import LitellmTextbasedModel
+    hermes_version = subprocess.check_output(["/opt/hermes/.venv/bin/python", "-c", "import sys; sys.path.insert(0, '/opt/hermes'); from run_agent import AIAgent; import importlib.metadata; print(importlib.metadata.version('hermes-agent'))"], text=True).strip()
     return {"mini-swe-agent": importlib.metadata.version("mini-swe-agent"),
+            "hermes": hermes_version,
+            "hermesRevision": Path("/opt/lmb/hermes-revision").read_text(),
             "opencode": subprocess.check_output(["opencode", "--version"], text=True).strip(),
             "runnerHash": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
 
@@ -139,6 +142,34 @@ def opencode(config, task, model):
     if proc.wait() != 0:
         raise RuntimeError("OpenCode exited with status " + str(proc.returncode))
 
+def hermes(config, task, model):
+    # This function is invoked only by the Hermes interpreter inside the same
+    # restricted container. 'local' terminal means local to this container.
+    sys.path.insert(0, "/opt/hermes")
+    os.chdir("/work/project")
+    import yaml
+    home = Path(os.environ["HERMES_HOME"])
+    home.mkdir(parents=True, exist_ok=True)
+    settings = {"model": {"default": model, "provider": "custom", "base_url": "http://127.0.0.1:8765/v1", "context_length": config["contextLength"]}, "terminal": {"backend": "local", "cwd": "/work/project", "timeout": min(config["timeoutSec"], 30)}, "compression": {"enabled": False}, "skills": {"auto_load": []}}
+    (home / "config.yaml").write_text(yaml.safe_dump(settings))
+    starts = {}
+    def tool_start(call_id, name, arguments):
+        starts[call_id] = time.monotonic()
+    def tool_complete(call_id, name, arguments, result):
+        started = starts.pop(call_id, None)
+        emit("tool", name=name, arguments=arguments, result=result, durationMs=None if started is None else (time.monotonic()-started)*1000)
+    with contextlib.redirect_stdout(sys.stderr):
+        from run_agent import AIAgent
+        agent = AIAgent(model=model, base_url="http://127.0.0.1:8765/v1", api_key="sandbox", provider="custom", api_mode="chat_completions", enabled_toolsets=["terminal", "file"], max_iterations=config["maxToolCalls"]+5, max_tokens=config["maxTokens"], request_overrides={"temperature": config["temperature"]}, quiet_mode=True, skip_memory=True, skip_context_files=True, skip_background_review=True, save_trajectories=False, checkpoints_enabled=False, cwd="/work/project", tool_start_callback=tool_start, tool_complete_callback=tool_complete)
+        emit("configuration", harness={"settings": settings, "enabled_toolsets": ["terminal", "file"], "max_iterations": config["maxToolCalls"]+5, "skip_memory": True, "skip_context_files": True, "skip_background_review": True, "save_trajectories": False, "checkpoints_enabled": False, "fallback_model": None}, model={"provider": "custom", "api_mode": "chat_completions", "model": model})
+        try:
+            result = agent.run_conversation(task["description"])
+            emit("message", result=result)
+            if result.get("error"):
+                raise RuntimeError(str(result["error"]))
+        finally:
+            agent.close()
+
 def collect(task):
     files = {}
     for name in task["files"]:
@@ -151,6 +182,16 @@ def collect(task):
 
 def main():
     global WIRE_INPUT
+    if "--hermes" in sys.argv:
+        payload = json.loads(sys.stdin.readline())
+        with open(os.devnull, "r") as empty:
+            os.dup2(empty.fileno(), sys.stdin.fileno())
+        try:
+            hermes(payload["config"], payload["task"], payload["model"])
+        except BaseException as error:
+            emit("error", message="Hermes: "+type(error).__name__+": "+str(error))
+            raise
+        return
     if "--diagnostic" in sys.argv:
         print(json.dumps(diagnostic()))
         return
@@ -182,6 +223,8 @@ def main():
             mini(config, task, initial["model"])
         elif initial["harness"] == "opencode":
             opencode(config, task, initial["model"])
+        elif initial["harness"] == "hermes":
+            subprocess.run(["/opt/hermes/.venv/bin/python", "-u", "/opt/lmb/runner.py", "--hermes"], input=json.dumps(initial)+"\n", text=True, check=True, cwd="/work/project", stderr=sys.stderr)
         else:
             raise RuntimeError("Unsupported harness")
         emit("artifacts", files=collect(task))

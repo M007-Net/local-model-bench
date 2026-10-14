@@ -13,6 +13,11 @@ export function classifyHarnessFailure(message:string){
  if(/cancel/i.test(message))return 'cancelled';if(/timeout|timed out|time.exceeded|wall.clock/i.test(message))return 'timeout';if(/Sandbox exited|Docker |Verifier infrastructure|cleanup failed/i.test(message))return 'infrastructure_error';if(/context|token.*limit/i.test(message))return 'context_limit';if(/budget|limit.*exceeded/i.test(message))return 'resource_limit';if(/format|invalid.*tool/i.test(message))return 'invalid_tool_use';if(/inference|HTTP|model identity/i.test(message))return 'inference_error';return 'infrastructure_or_harness_error';
 }
 export function toolMetrics(event:any){
+ if(event.name&&typeof event.result==='string'){
+  let result:any;try{result=JSON.parse(event.result);}catch{return {failed:null,ms:typeof event.durationMs==='number'?event.durationMs:null};}
+  const code=result.exit_code??result.returncode;
+  return {failed:!!result.error||result.success===false||typeof code==='number'&&code!==0,ms:typeof event.durationMs==='number'&&Number.isFinite(event.durationMs)&&event.durationMs>=0?event.durationMs:null};
+ }
  const state=event.event?.part?.state;
  if(state){const start=state.time?.start,end=state.time?.end,exit=state.metadata?.exit;return {failed:state.status==='error'||typeof exit==='number'&&exit!==0,ms:typeof start==='number'&&typeof end==='number'&&end>=start?end-start:null};}
  return {failed:!!event.result?.exception||typeof event.result?.returncode==='number'&&event.result.returncode!==0,ms:typeof event.durationMs==='number'&&Number.isFinite(event.durationMs)&&event.durationMs>=0?event.durationMs:null};
@@ -42,11 +47,11 @@ export async function runHarnessEvaluation(run:HarnessRun,settings:Settings,sign
    }
    if(!instance||instance.config.context_length!==config.contextLength||instance.config.parallel!==1)throw Error('LM Studio did not confirm the requested effective load configuration');
    (run.environment.models as Record<string,unknown>)[key]={model,instance,weightsIdentity:{key,sizeBytes:model.size_bytes,quantization:model.quantization},contentHash:'unavailable; model resource identity is server-reported'};update();
-   if(config.harnesses.includes('opencode')){
-    progress(key,'opencode','',0,'Checking native tool calling');
+   if(config.harnesses.some(h=>h==='opencode'||h==='hermes')){
+    progress(key,'','',0,'Checking native tool calling for OpenCode/Hermes');
     const probeSignal=AbortSignal.any([signal,AbortSignal.timeout(config.timeoutSec*1000)]);
     const probe=await adapter.infer(settings,{model:instance.id,messages:[{role:'user',content:'Call the readiness tool with ready=true.'}],tools:[{type:'function',function:{name:'readiness',description:'Check tool readiness',parameters:{type:'object',properties:{ready:{type:'boolean'}},required:['ready']}}}],tool_choice:'required',max_tokens:config.maxTokens,temperature:config.temperature,...(harnessReasoningWire(config.reasoning)!==undefined?{reasoning_effort:harnessReasoningWire(config.reasoning)}:{}),stream:false},probeSignal);
-    if(!probe.choices?.[0]?.message?.tool_calls?.some((t:any)=>t.function?.name==='readiness'))throw Error(`OpenCode requires native tool calling; ${key} did not pass the probe. No harness was substituted.`);
+    if(!probe.choices?.[0]?.message?.tool_calls?.some((t:any)=>t.function?.name==='readiness'))throw Error(`Selected native-tool harness requires tool calling; ${key} did not pass the probe. No harness was substituted.`);
    }
    for(const harness of config.harnesses)for(const task of run.tasks)for(let repeat=1;repeat<=config.trials;repeat++){
     if(signal.aborted)break;
@@ -66,7 +71,7 @@ export async function runHarnessEvaluation(run:HarnessRun,settings:Settings,sign
        proposedTools+=(response.choices?.[0]?.message?.tool_calls??[]).length;if(proposedTools>config.maxToolCalls)throw Error('Tool call budget exceeded before delivery');
        return {status:200,body:response};
       }else if(event.kind==='tool'){
-       trial.metrics.toolCalls!++;const measurement=toolMetrics(event);if(measurement.failed)trial.metrics.failedToolCalls!++;if(measurement.ms===null)toolTimingComplete=false;else toolMs+=measurement.ms;trace('tool',event);if(trial.metrics.toolCalls!>config.maxToolCalls)throw Error('Tool call budget exceeded');
+       trial.metrics.toolCalls!++;const measurement=toolMetrics(event);if(measurement.failed===null)trial.metrics.failedToolCalls=null;else if(measurement.failed&&trial.metrics.failedToolCalls!==null)trial.metrics.failedToolCalls++;if(measurement.ms===null)toolTimingComplete=false;else toolMs+=measurement.ms;trace('tool',event);if(trial.metrics.toolCalls!>config.maxToolCalls)throw Error('Tool call budget exceeded');
       }else if(event.kind==='artifacts')trial.files=artifacts(event.files,task);
       else if(event.kind==='error'){harnessError=String(event.message).slice(0,8000);trace('error',harnessError);}
       else if(event.kind==='message'){trace('message',event);const result=event.result;if(result?.exit_status&&result.exit_status!=='Submitted')harnessError=String(result.exit_status);if(event.event?.type==='error')harnessError=JSON.stringify(event.event.error);}

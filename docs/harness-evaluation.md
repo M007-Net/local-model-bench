@@ -14,10 +14,10 @@ Reviewed upstream interfaces:
 | [Harbor](https://github.com/harbor-framework/harbor/tree/main/src/harbor/agents/installed) | Installed agents including OpenCode, Mini-SWE-Agent and Hermes; container orchestration and trajectory conversion; Python infrastructure | Practical for larger external datasets. Its orchestration is not used: direct interfaces allow the application to enforce its narrower network and filesystem policy. |
 | [Mini-SWE-Agent](https://mini-swe-agent.com/latest/models/local_models/) | LiteLLM OpenAI-compatible custom `api_base`; upstream `DefaultAgent`, `LitellmTextbasedModel`, `LocalEnvironment` | Implemented adapter targets 2.4.6; all Python execution is **inside the container**. Text-based action parsing remains the upstream harness's responsibility. |
 | [OpenCode](https://opencode.ai/docs/providers/) | Custom `@ai-sdk/openai-compatible` provider with `baseURL`; `opencode run --format json --model provider/model` | Implemented adapter targets 1.19.0. Native function calling is required and probed. JSON events expose tools and messages. |
-| [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/configuration/) | Custom OpenAI-compatible base URL and auxiliary endpoint configuration; Harbor also provides an installed adapter | Investigated, **not implemented or supported**. Configuration and auxiliary request restrictions require additional adapter work. Disabled in the UI. |
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent/blob/f97608f178d1ffeca59860195ab7da295f7c8e5f/website/docs/guides/python-library.md) | Upstream `AIAgent.run_conversation`, custom OpenAI chat endpoint and tool start/completion callbacks | Adapter targets stable 0.21.5, revision `f97608f178d1ffeca59860195ab7da295f7c8e5f`. Its separate editable environment is installed with the upstream lockfile using `uv sync --frozen --no-dev`. Terminal/file tools only; memory, background review, context files, checkpoints and compression disabled. Minimum context 64,000 tokens. |
 | [LM Studio](https://lmstudio.ai/docs/developer/openai-compat/tools) | `/v1/chat/completions` supports function tools; native model discovery and CLI load remain available | Native discovery/load is reused. Harness inference uses OpenAI chat, without changing existing native benchmarks. |
 
-Both adapters have also been exercised with actual LM Studio inference, tool execution and objective verification using Gemma 4 12B IQ3_XXS on the mean-repair task. This is a smoke test of those pinned versions and that model/task combination, not evidence of compatibility with every model or task. A dependency self-check verifies imports and pinned versions, not task success.
+In 1.21.2, Mini-SWE-Agent and OpenCode were exercised with actual LM Studio inference, tool execution and objective verification using Gemma 4 12B IQ3_XXS on the mean-repair task. This is a smoke test of those pinned versions and that model/task combination, not evidence of compatibility with every model or task. A dependency self-check verifies imports and pinned versions, not task success.
 
 The existing worker-thread architecture runs evaluation off the renderer thread. Separate SQLite `harness_runs` and `harness_trials` tables preserve configuration, task snapshots, trial metrics, verification and bounded events. Existing runs, agentic runs, samples and points are unchanged. Aggregates are derived from trials. No repository files are used as task workspaces.
 
@@ -28,10 +28,10 @@ The existing worker-thread architecture runs evaluation off the renderer thread.
 3. **Explicitly approve dependency installation** before running the following image build. The application never installs, pulls or builds harness dependencies automatically. This command downloads packages into a dedicated Linux image; host Python and host harness installations are unnecessary:
 
    ```powershell
-   docker build --tag local-model-bench-harness:1 --file harness/Dockerfile harness
+   docker build --tag local-model-bench-harness:2 --file harness/Dockerfile harness
    ```
 
-   The Dockerfile pins Mini-SWE-Agent 2.4.6 and OpenCode 1.19.0. Base image and transitive dependencies can change on rebuild; the actual image digest and runner hash are recorded, so comparisons across different builds should be reviewed. Keep that image to reproduce its environment.
+   The Dockerfile pins Mini-SWE-Agent 2.4.6, OpenCode 1.19.0 and Hermes 0.21.5 at an exact source revision. Hermes has its own frozen dependency environment so it cannot replace Mini-SWE-Agent dependencies. Base image and transitive dependencies can change on rebuild; the actual image digest and runner hash are recorded, so comparisons across different builds should be reviewed. Keep that image to reproduce its environment.
 
 4. Build/start the desktop application using the usual commands:
 
@@ -45,7 +45,7 @@ The existing worker-thread architecture runs evaluation off the renderer thread.
 
 ## First real comparison
 
-Choose one downloaded text model with native tool calling, enable Mini-SWE-Agent and OpenCode, select one task and one trial, use context 8192 and a modest output limit, and start. The seed deterministically selects and orders tasks; select more tasks/repeats for broader observations. The same loaded model instance is used across harnesses; fresh task containers reset every attempt. Exact existing context/parallel load settings are reused, otherwise a uniquely named instance is loaded and cleaned up. Other applications' model instances are not unloaded.
+Choose one downloaded text model with native tool calling, enable Mini-SWE-Agent, OpenCode and Hermes, select one task and one trial, use context 65536 and a modest output limit, and start. The seed deterministically selects and orders tasks; select more tasks/repeats for broader observations. The same loaded model instance is used across harnesses; fresh task containers reset every attempt. Exact existing context/parallel load settings are reused, otherwise a uniquely named instance is loaded and cleaned up. Other applications' model instances are not unloaded.
 
 The engine checks model existence, context and reasoning capabilities and confirms effective native load settings. OpenCode's native tool calling is probed before task attempts for that model. A failed probe stops the run, preserving earlier results; models are handled sequentially, so later-model compatibility checks can fail after earlier-model results were recorded. There is no silent harness/model substitution.
 
@@ -110,8 +110,46 @@ After explicit approval, the dedicated image was built and both real adapters we
 
 OpenCode's attempt produced a literal `\\n` in the Python source, so the independent verifier rejected it. That is an observed task failure, not an adapter startup failure. A second comparison started from the desktop UI produced the same success/failure outcomes and was saved in SQLite. Actual live results were displayed, all three export formats were written, and trial history survived desktop restart with no page errors. Earlier failed startup attempts are retained separately and are not presented as working integration results.
 
-These observations satisfy the initial two-harness execution/verification path; they are not a broad success-rate ranking. Hermes remains unavailable. Remaining work includes a Hermes adapter, full-pack/multi-model live validation, package lock/base digest pinning for image rebuilds, stronger runtime setting attestation, more task categories, more detailed failure diagnosis, server-side inference timing and additional inference backends. Local CLI runtime selection/inventory is recorded with its provenance; it is not claimed as server-side runtime attestation. Native discovery/load currently require LM Studio; the narrow OpenAI relay is reusable for future backends.
+These observations satisfy the initial two-harness execution/verification path; they are not a broad success-rate ranking. Hermes was unavailable in 1.21.2. Remaining work includes full-pack/multi-model live validation, package lock/base digest pinning for image rebuilds, stronger runtime setting attestation, more task categories, more detailed failure diagnosis, server-side inference timing and additional inference backends. Local CLI runtime selection/inventory is recorded with its provenance; it is not claimed as server-side runtime attestation. Native discovery/load currently require LM Studio; the narrow OpenAI relay is reusable for future backends.
 
 Final approved validation: 304/304 tests passed with installed-image integration checks enabled, including actual Docker cancellation and timeout cleanup; TypeScript and production build passed. Both real upstream runtimes passed the isolated relay transport check. The corrected desktop QA script completed a real UI-started comparison, displayed both trials, exported JSON/CSV/Markdown and verified SQLite persistence after restart. Harness-specific CSS is scoped to its panels. OpenCode nonzero shell exit metadata is counted as failed tool execution; complete saved QA traces were used to correct earlier counts, with original values retained in correction metadata. Ephemeral model instance IDs do not make otherwise identical comparisons incompatible; effective load differences still do. Final cleanup found no evaluation containers and no loaded benchmark model.
 
 The final existing Agent Worker Sweep desktop regression passed (1/2/4/8 workers). Its QA selector now targets the exact numeric input so previously saved timeline images cannot ambiguously match the field label; this changes test targeting, not sweep behavior. The Windows 1.21.2 installer was built and installed locally, and existing readable benchmark history was verified after installation. GitHub source includes Docker/web packaging; web harness execution is disabled until a trusted sandbox controller exists. See docker-linux.md for this deployment limitation.
+
+## Hermes runtime configuration in 1.21.3
+
+Hermes uses its supported local terminal backend **inside the restricted task container**; it never starts a host Hermes process. Autonomous tool permission applies only within this sandbox. Both native-tool harnesses must pass the model tool-calling probe before any trial. Context below 64,000 is rejected explicitly before loading a model. The shared relay sends the selected output, temperature and reasoning settings and refuses a different model. Auxiliary network access, API fallback, persistent memory and background reviews are disabled; the container has no network route. Completed Hermes tool callbacks report arguments, results and observed duration. Unparseable tool result failure status stays unavailable.
+
+Run the real three-harness check with:
+
+```powershell
+node --import tsx scripts/harness-live.ts --model 'gemma-4-12b-it@iq3_xxs' --reasoning off --context 65536 --timeout 180
+```
+
+Use `--harnesses mini-swe-agent,opencode,hermes` to select adapters explicitly, `--task port-config` for one named integration task, or `--tasks 8` for the full pack. The live integration script defaults to all available harnesses and 65,536 context tokens when Hermes is selected; explicit context values are validated unchanged. The desktop configuration retains its editable context field. A completed verification failure is an observed model/task outcome; a runtime, transport or startup failure does not prove a working adapter. Full-pack and additional-model compatibility remain separate validation work.
+
+### First real three-harness validation
+
+Run `7d56e5e0-1f7f-4643-abf3-f51b1c1f2959` on 2026-10-13 used Gemma 4 12B IQ3_XXS, context 65,536, output 1,024 per request, temperature 0, reasoning off / wire none, 2 CPUs, 2,048 MiB, 30 tool calls and 180 seconds per task. Each harness received the same mean task v1 and deterministic initial commit.
+
+| Harness | Objective outcome | Duration | Model requests | Tool calls | Measured total tokens |
+| --- | --- | --- | --- | --- | --- |
+| Mini-SWE-Agent 2.4.6 | Passed all 4 cases | 54.160 s | 8 | 6 | 12,316 |
+| OpenCode 1.19.0 | Failed verification | 21.236 s | 6 | 4 | 29,912 |
+| Hermes 0.21.5 | Passed all 4 cases | 43.623 s | 3 | 2 | 14,422 |
+
+OpenCode successfully read and edited files, but its model-produced replacement string contained a literal backslash-n, creating a Python syntax error. This is retained as a verification failure. Hermes used its real read_file and patch tools, with completed callbacks and automatic verifier output. All three actual runtimes passed the isolated relay cancellation check. The real saved trials were inspected and exported through the desktop UI and survived restart. These are limited observations on one local model, not statistically conclusive rankings or a claim that agents always repair tasks.
+
+A second shared task, port-config v1, used identical IQ3 model/settings in run `dc2a222c-656b-4fba-ba82-40516aeafbc5`: Mini-SWE-Agent passed in 14.707 s (4 tools), OpenCode failed in 36.428 s (2 tools), Hermes passed in 27.383 s (2 tools). The OpenCode model supplied malformed glob patterns, found no files and left the configuration unchanged. This failure is retained, not corrected into a success or hidden.
+
+### Shared Q4 model validation
+
+Run `e500d539-d7e4-4b5b-abd2-c01524be4556` used the same mean v1 task and budgets above with the already-downloaded `gemma-4-12b-it@q4_k_xl` model. All three used the same loaded Q4 instance and fresh task containers; no adapter, prompt, tool result or file content was replaced to force success.
+
+| Harness | Objective outcome | Duration | Model requests | Tool calls | Measured total tokens |
+| --- | --- | --- | --- | --- | --- |
+| mini-swe-agent | success | 14.605 s | 4 | 4 | 4446 |
+| opencode | success | 19.687 s | 5 | 3 | 23774 |
+| hermes | success | 42.564 s | 4 | 3 | 19062 |
+
+All three passed all four independent verifier cases. The earlier IQ3 failures remain in history and are not overwritten. Different quantizations are separate models and must not be presented as an identical-weights comparison across these runs. This verifies execution and one task on this model; it does not establish broad reliability. Host-reported startup timing currently covers container launch and the pinned import self-check, not all later harness initialization.

@@ -1,7 +1,7 @@
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
-import {HARNESS_IMAGE,HARNESS_PROTOCOL,harnesses,type HarnessConfig,type HarnessDiagnostics} from '../src/harness';
+import {HARNESS_IMAGE,HARNESS_PROTOCOL,HERMES_REVISION,harnesses,type HarnessConfig,type HarnessDiagnostics} from '../src/harness';
 
 export const MAX_WIRE_BYTES=2_000_000;
 export function dockerCommand(args:string[],input='',signal?:AbortSignal,timeoutMs=30000):Promise<{code:number;stdout:string;stderr:string}>{
@@ -25,6 +25,7 @@ export async function harnessDiagnostics():Promise<HarnessDiagnostics>{
   const args=sandboxArgs('lmb-harness-check-'+randomUUID().slice(0,8),metadata.Id,{...({} as HarnessConfig),cpus:1,memoryMb:1024,timeoutSec:30},'diagnostic');
   args.push('--diagnostic');const result=await dockerCommand(args,'',undefined,60000);if(result.code)throw Error(result.stderr||'Harness image self-check failed');
   const versions=JSON.parse(result.stdout);for(const h of harnesses.filter(h=>h.available))if(versions[h.id]!==h.version)throw Error(`${h.name} version mismatch: expected ${h.version}, found ${versions[h.id]}`);
+  if(versions.hermesRevision!==HERMES_REVISION)throw Error('Hermes source revision mismatch; rebuild the pinned evaluation image');
   return {ready:true,imageId:metadata.Id,message:'Docker isolation and pinned harness imports available. Model compatibility is checked at start.',versions};
  }catch(e){return {ready:false,imageId:null,message:(e as Error).message,versions:{}};}
 }

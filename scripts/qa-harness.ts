@@ -24,7 +24,7 @@ try{
  await page.getByRole('button',{name:'Harness Evaluation',exact:true}).click();
  await page.getByRole('heading',{name:'Harness Evaluation',exact:true}).waitFor();
  await page.getByRole('heading',{name:'Task outcome matrix',exact:true}).waitFor();
- assert.equal(await page.getByRole('checkbox',{name:/Hermes/}).isDisabled(),true);
+ await page.waitForFunction(()=>!(document.querySelector('.harness-fieldset') as HTMLFieldSetElement)?.disabled);assert.equal(await page.getByRole('checkbox',{name:/Hermes/}).isDisabled(),false);
  await page.getByRole('button',{name:'1: success',exact:true}).click();
  await page.getByRole('heading',{name:'Chronological execution',exact:true}).waitFor();
  assert.ok(await page.getByText('Synthetic verification fixture').isVisible());

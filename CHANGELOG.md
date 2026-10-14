@@ -6,6 +6,20 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.21.3 — 2026-10-13
+
+### Added
+
+- Pinned Hermes 0.21.5 adapter using the upstream Python library and a separate frozen dependency environment inside the restricted task sandbox.
+- Hermes terminal/file tool arguments, results and execution timing in saved traces and exports.
+- Explicit minimum-context validation for Hermes and a native tool-calling preflight for Hermes-only configurations.
+- Three-harness live/transport and desktop result-inspection checks. Existing Agent Worker Sweep and history are preserved.
+
+### Verified
+
+- Mini-SWE-Agent, OpenCode and Hermes each made real model requests and tool calls and passed the same mean-repair task on local Gemma 4 12B Q4_K_XL. Prior IQ3 failures remain separately recorded.
+- Real three-runtime relay/cancellation checks and saved-result UI/export/restart checks passed. Context below 64,000 is rejected for Hermes before starting a benchmark.
+
 ## 1.21.2 — 2026-10-13
 
 ### Added

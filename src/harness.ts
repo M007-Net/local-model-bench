@@ -1,11 +1,12 @@
 import {integer} from './validate';
 export const HARNESS_PROTOCOL='lmb-harness-v1';
-export const HARNESS_IMAGE='local-model-bench-harness:1';
+export const HARNESS_IMAGE='local-model-bench-harness:2';
+export const HERMES_REVISION='f97608f178d1ffeca59860195ab7da295f7c8e5f';
 export type HarnessId='mini-swe-agent'|'opencode'|'hermes';
 export const harnesses:{id:HarnessId;name:string;available:boolean;version:string}[]=[
  {id:'mini-swe-agent',name:'Mini-SWE-Agent',available:true,version:'2.4.6'},
  {id:'opencode',name:'OpenCode',available:true,version:'1.19.0'},
- {id:'hermes',name:'Hermes Agent (adapter unavailable)',available:false,version:'unavailable'}
+ {id:'hermes',name:'Hermes Agent',available:true,version:'0.21.5'}
 ];
 export type HarnessConfig={name:string;modelKeys:string[];harnesses:HarnessId[];pack:'python-repairs-v1';taskCount:number;seed:number;trials:number;contextLength:number;maxTokens:number;temperature:number;reasoning:'default'|'off'|'on';maxToolCalls:number;timeoutSec:number;maxTotalTokens:number|null;cpus:number;memoryMb:number};
 export const defaultHarnessConfig:HarnessConfig={name:'',modelKeys:[],harnesses:['mini-swe-agent','opencode'],pack:'python-repairs-v1',taskCount:5,seed:42,trials:1,contextLength:8192,maxTokens:1024,temperature:0,reasoning:'default',maxToolCalls:30,timeoutSec:180,maxTotalTokens:null,cpus:2,memoryMb:2048};
@@ -25,6 +26,7 @@ export function validateHarnessConfig(c:HarnessConfig):HarnessConfig{
  if(c.pack!=='python-repairs-v1')throw Error('Unknown task pack');
  integer(c.taskCount,1,8,'Tasks');integer(c.seed,0,4294967295,'Seed');integer(c.trials,1,10,'Trials');integer(c.contextLength,2048,1048576,'Context');integer(c.maxTokens,32,131072,'Output limit');integer(c.maxToolCalls,1,200,'Tool calls');integer(c.timeoutSec,10,3600,'Task timeout');integer(c.memoryMb,512,8192,'Memory');
  if(c.maxTokens>=c.contextLength)throw Error('Leave context space for prompts and tools');
+ if(c.harnesses.includes('hermes')&&c.contextLength<64000)throw Error('Hermes 0.21.5 requires at least 64,000 context tokens. Use the same context window for every selected harness.');
  if(c.maxTotalTokens!==null)integer(c.maxTotalTokens,c.maxTokens,10000000,'Total token budget');
  if(!Number.isFinite(c.temperature)||c.temperature<0||c.temperature>1)throw Error('Temperature must be between 0 and 1');
  if(!Number.isFinite(c.cpus)||c.cpus<0.5||c.cpus>8)throw Error('CPU budget must be between 0.5 and 8');

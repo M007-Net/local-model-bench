@@ -24,7 +24,7 @@ saved runs using the same questions to evaluate models, reasoning settings or
 output budgets. See [the protocol](docs/token-efficiency-benchmark.md).
 
 The Agents page also offers **Harness Evaluation** in the Windows desktop app:
-Mini-SWE-Agent and OpenCode attempt identical objectively verified repairs in
+Mini-SWE-Agent, OpenCode and Hermes attempt identical objectively verified repairs in
 fresh restricted Docker sandboxes. This is evaluation, not training. See
 [setup, live verification and limitations](docs/harness-evaluation.md).
 
