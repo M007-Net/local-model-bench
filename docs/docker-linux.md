@@ -5,7 +5,7 @@ benchmark/agent workers as the desktop application. It runs on Windows and Linux
 without Electron or a graphical session. Docker runs the panel, while inference
 comes from a separately configured LM Studio, Ollama, llama.cpp or compatible API.
 
-**Harness Evaluation execution is desktop-only in 1.21.3.** The web panel includes
+**Harness Evaluation execution is desktop-only in 1.21.4.** The web panel includes
 the configuration and results interface, separate SQLite records and exports,
 but displays an explicit dependency message and disables Start. A trusted host
 sandbox controller is not bundled into the web deployment. Neither the web

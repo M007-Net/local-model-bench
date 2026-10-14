@@ -6,6 +6,7 @@ import {randomUUID} from 'node:crypto';
 import {dockerCommand,sandboxArgs,removeSandbox} from '../electron/harness-sandbox';
 import {defaultHarnessConfig} from '../src/harness';
 import {harnessTasks} from '../electron/harness-tasks';
+import {harderRepairs} from '../tests/fixtures/harness-reference';
 const image=process.env.LMB_SANDBOX_TEST_IMAGE;if(!image)throw Error('Specify a preinstalled Python-capable image with LMB_SANDBOX_TEST_IMAGE; this script never pulls images.');
 const c={...defaultHarnessConfig,timeoutSec:30};
 async function python(source:string,input=''){
@@ -24,9 +25,10 @@ const repairs=[
  'def solve(prefix):\n    return 2**(32-prefix) if prefix>=31 else 2**(32-prefix)-2\n'
 ];
 const verifier=readFileSync('harness/verifier.py','utf8');
-for(const [i,task] of harnessTasks.entries()){
+const selected=process.argv.includes('--task')?harnessTasks.filter(t=>t.id===process.argv[process.argv.indexOf('--task')+1]):harnessTasks;assert.ok(selected.length);
+for(const task of selected){const i=harnessTasks.indexOf(task);
  const original=await python(verifier,JSON.stringify({files:task.files,entry:task.entry,cases:task.cases})+'\n');assert.equal(original.code,1,task.id+' original must fail: '+original.stderr);
- const files={...task.files,'solution.py':repairs[i]};if(task.id==='port-config')files['service.json']=JSON.stringify({host:'127.0.0.1',port:8080,debug:false});if(task.id==='inventory')files['inventory.py']='def total(items):\n    return sum(i["price"]*i.get("quantity",1) for i in items)\n';
- const fixed=await python(verifier,JSON.stringify({files,entry:task.entry,cases:task.cases})+'\n');assert.equal(fixed.code,0,task.id+' reference repair must pass: '+fixed.stderr);
+ const files={...task.files,...(i<8?{'solution.py':repairs[i]}:harderRepairs[task.id])};if(task.id==='port-config')files['service.json']=JSON.stringify({host:'127.0.0.1',port:8080,debug:false});if(task.id==='inventory')files['inventory.py']='def total(items):\n    return sum(i["price"]*i.get("quantity",1) for i in items)\n';
+ const fixed=await python(verifier,JSON.stringify({files,entry:task.entry,cases:task.cases})+'\n');assert.equal(fixed.code,0,task.id+' reference repair must pass: '+fixed.stdout+fixed.stderr);
 }
-console.log('Real Docker isolation passed; all 8 broken tasks failed and all 8 reference repairs passed. No agent or model inference performed.');
+console.log(`Real Docker isolation passed; all ${selected.length} broken tasks failed and all ${selected.length} reference repairs passed. No agent or model inference performed.`);

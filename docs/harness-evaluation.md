@@ -10,7 +10,7 @@ Reviewed upstream interfaces:
 
 | Infrastructure | Verified interface / capability | Decision |
 | --- | --- | --- |
-| [OpenEnv](https://huggingface.co/docs/openenv/getting-started) | Typed reset/step/tool clients; Docker-backed environments; Python client and environment server | Useful for environment standardization and training ecosystems, but would add a Python/server layer for eight small offline tasks. Not required here. |
+| [OpenEnv](https://huggingface.co/docs/openenv/getting-started) | Typed reset/step/tool clients; Docker-backed environments; Python client and environment server | Useful for environment standardization and training ecosystems, but would add a Python/server layer for small offline task packs. Not required here. |
 | [Harbor](https://github.com/harbor-framework/harbor/tree/main/src/harbor/agents/installed) | Installed agents including OpenCode, Mini-SWE-Agent and Hermes; container orchestration and trajectory conversion; Python infrastructure | Practical for larger external datasets. Its orchestration is not used: direct interfaces allow the application to enforce its narrower network and filesystem policy. |
 | [Mini-SWE-Agent](https://mini-swe-agent.com/latest/models/local_models/) | LiteLLM OpenAI-compatible custom `api_base`; upstream `DefaultAgent`, `LitellmTextbasedModel`, `LocalEnvironment` | Implemented adapter targets 2.4.6; all Python execution is **inside the container**. Text-based action parsing remains the upstream harness's responsibility. |
 | [OpenCode](https://opencode.ai/docs/providers/) | Custom `@ai-sdk/openai-compatible` provider with `baseURL`; `opencode run --format json --model provider/model` | Implemented adapter targets 1.19.0. Native function calling is required and probed. JSON events expose tools and messages. |
@@ -75,7 +75,7 @@ The optional total-token control is a **measured stopping threshold**, not an ex
 
 ## Results and exports
 
-Success rate is primary; duration, tool usage and measured token cost support interpretation. The dashboard shows descriptive Wilson intervals, duration variability in aggregates, category counts, grouped comparison charts and a task outcome matrix. Repeated trials sharing a task are correlated; Wilson intervals are descriptive and not a rigorous generalization claim. One run is not statistically conclusive. These eight authored tasks differ from SWE-bench in dataset, sandbox, budgets and verification; **do not compare these scores to official SWE-bench scores**.
+Success rate is primary; duration, tool usage and measured token cost support interpretation. The dashboard shows descriptive Wilson intervals, duration variability in aggregates, category counts, grouped comparison charts and a task outcome matrix. Repeated trials sharing a task are correlated; Wilson intervals are descriptive and not a rigorous generalization claim. One run is not statistically conclusive. These authored task packs differ from SWE-bench in dataset, sandbox, budgets and verification; **do not compare these scores to official SWE-bench scores**.
 
 Selecting a matrix outcome displays task objectives, effective configuration, original/final files, verifier output and the chronological model/tool timeline. Token totals become unavailable if any response lacks complete usage. Reasoning tokens are not added twice to completion totals. No universal combined score is computed. Failure labels distinguish verification, context, timeout, resource, inference and broader infrastructure/harness errors; distinguishing model reasoning from harness limitations can require inspecting the trace.
 
@@ -153,3 +153,17 @@ Run `e500d539-d7e4-4b5b-abd2-c01524be4556` used the same mean v1 task and budget
 | hermes | success | 42.564 s | 4 | 3 | 19062 |
 
 All three passed all four independent verifier cases. The earlier IQ3 failures remain in history and are not overwritten. Different quantizations are separate models and must not be presented as an identical-weights comparison across these runs. This verifies execution and one task on this model; it does not establish broad reliability. Host-reported startup timing currently covers container launch and the pinned import self-check, not all later harness initialization.
+
+## Expanded task pack in 1.21.4
+
+Expanded repairs v2 has 20 original tasks and 103 automated verification cases: the original eight plus twelve harder cases covering interval union, dependency order/cycles, JSON Pointer escaping, LRU eviction, safe integer expressions, recursive configuration merging, sliding-window counts, idempotent transaction processing, Unicode slug collisions, longest-prefix network ACLs, strict CSV and cyclic pagination. Each new task has at least five independent edge cases. Task success still requires every case to pass; scoring is unchanged and 100% remains a valid outcome. Tests are not designed to force failures.
+
+New desktop configurations default to v2 and all 20 tasks. Select fewer tasks for a shorter run, or Original repairs v1 for the unchanged eight-task pool. Original IDs, versions, assets, verifier cases and seeded ordering are preserved. Existing saved task snapshots and results are unchanged; different task sets are flagged as incompatible comparisons. Running all 20 tasks through three harnesses creates 60 fresh attempts per trial and can take substantially longer than the earlier one-task smoke tests.
+
+The live helper accepts `--pack python-repairs-v2 --tasks 20`, or `--pack python-repairs-v1 --tasks 8`. `--task transaction-ledger` selects one explicit harder integration fixture. Reference repairs live only in test fixtures and are never passed to agents.
+
+The ledger task is version 2: the pilot omitted explicit return counter types, so the description now states integer counts rather than ID lists. Pilot v1 traces are retained separately and must not be treated as a definitive quality ranking. This clarification changes no verifier expectations or scoring rules.
+
+### Expanded-pack live smoke check
+
+Run `3fa9130d-e941-4027-9753-8cc2ce9e0933` tested transaction-ledger v2 with the same local Gemma Q4_K_XL model and previously recorded budgets. All three passed all five verifier cases: Mini-SWE-Agent 56.100 s / 5 tools; OpenCode 151.236 s / 29 tools; Hermes 80.926 s / 6 tools. The task took substantially more work than the mean-repair smoke check. This is one task, not a full-pack success rate; a valid run can still score 100%. The 20-task pack is available for broader evaluation, but no 60-attempt full-pack result is claimed here.

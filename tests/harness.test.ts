@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {HARNESS_PROTOCOL,defaultHarnessConfig,validateHarnessConfig,validateHarnessModels,selectHarnessTasks,aggregateHarness,comparisonIssues,type HarnessRun} from '../src/harness';
-import {harnessTasks} from '../electron/harness-tasks';
+import {harnessTasks,tasksForHarnessPack} from '../electron/harness-tasks';
 import {runHarnessEvaluation,classifyHarnessFailure,toolMetrics,type HarnessAdapter} from '../electron/harness-engine';
 import {relayBody,recordUsage,relayInference} from '../electron/harness-relay';
 import {sandboxArgs,harnessDiagnostics,runSandbox,dockerCommand} from '../electron/harness-sandbox';
@@ -19,10 +19,10 @@ function mock(contextLength=8192):HarnessAdapter{
  return {diagnostics:async()=>({ready:true,imageId:'sha256:fixture',message:'mock',versions:{}}),models:async()=>[model],cli:async()=>'',api:async()=>({}),infer:async(_s,b)=>response(String(b.model)),sandbox:async o=>{await o.onEvent({kind:'ready'});await o.onEvent({kind:'configuration',harness:{prompt:'fixture'}});await o.onEvent({kind:'request',body:{model:'fixture-instance',messages:[{role:'user',content:'repair'}]}});await o.onEvent({kind:'tool',result:{returncode:0},durationMs:5});await o.onEvent({kind:'artifacts',files:{'solution.py':'def solve(values):\n    return sum(values)/len(values) if values else 0\n'}});},verify:async()=>({code:0,stdout:harnessTasks[0].cases.map((_,i)=>JSON.stringify({case:i+1,passed:true})).join('\n'),stderr:''})};
 }
 test('harness configuration validates supported harnesses, budgets and distinct models',()=>{
- assert.deepEqual(validateHarnessConfig(config()),config());for(const patch of [{harnesses:['unknown']},{modelKeys:[]},{modelKeys:['fixture','fixture']},{taskCount:9},{seed:-1},{trials:0},{contextLength:1024},{maxTokens:8192},{maxToolCalls:0},{timeoutSec:0},{maxTotalTokens:10},{temperature:NaN},{reasoning:'low'},{cpus:9},{memoryMb:256},{pack:'unknown'}])assert.throws(()=>validateHarnessConfig({...config(),...patch} as any));
+ assert.deepEqual(validateHarnessConfig(config()),config());for(const patch of [{harnesses:['unknown']},{modelKeys:[]},{modelKeys:['fixture','fixture']},{taskCount:21},{seed:-1},{trials:0},{contextLength:1024},{maxTokens:8192},{maxToolCalls:0},{timeoutSec:0},{maxTotalTokens:10},{temperature:NaN},{reasoning:'low'},{cpus:9},{memoryMb:256},{pack:'unknown'}])assert.throws(()=>validateHarnessConfig({...config(),...patch} as any));
 });
 test('task selection is seeded, unique, repeatable and detached from initial assets',()=>{
- const a=selectHarnessTasks(harnessTasks,8,42),b=selectHarnessTasks(harnessTasks,8,42);assert.deepEqual(a,b);assert.equal(new Set(a.map(t=>t.id)).size,8);assert.notDeepEqual(a,selectHarnessTasks(harnessTasks,8,43));a[0].files['solution.py']='changed';assert.notDeepEqual(a,b);assert.throws(()=>selectHarnessTasks(harnessTasks,9,42));
+ const a=selectHarnessTasks(harnessTasks,8,42),b=selectHarnessTasks(harnessTasks,8,42);assert.deepEqual(a,b);assert.equal(new Set(a.map(t=>t.id)).size,8);assert.notDeepEqual(a,selectHarnessTasks(harnessTasks,8,43));a[0].files['solution.py']='changed';assert.notDeepEqual(a,b);assert.throws(()=>selectHarnessTasks(harnessTasks,21,42));
 });
 test('relay pins the instance and settings and drops unrecognized upstream controls',()=>{
  const body=relayBody({model:'fixture',messages:[],temperature:1,max_tokens:999,api_key:'secret',base_url:'http://attacker',stream:true,seed:999},'fixture',config());assert.equal(body.temperature,0);assert.equal(body.max_tokens,1024);assert.equal(body.stream,false);assert.equal(body.api_key,undefined);assert.equal(body.base_url,undefined);assert.equal(body.seed,undefined);assert.throws(()=>relayBody({model:'another',messages:[]},'fixture',config()));
@@ -102,3 +102,7 @@ test('Hermes native tools participate in the same adapter, persistence and expor
 test('Hermes tool results retain failure status and unknown results',()=>{assert.equal(toolMetrics({name:'terminal',result:JSON.stringify({exit_code:2}),durationMs:4}).failed,true);assert.equal(toolMetrics({name:'write_file',result:JSON.stringify({success:true}),durationMs:4}).failed,false);assert.equal(toolMetrics({name:'terminal',result:'unparseable',durationMs:4}).failed,null);});
 
 test('Hermes minimum context is rejected before starting any harness in the comparison',()=>{assert.throws(()=>validateHarnessConfig({...config(),harnesses:['hermes'],contextLength:16384}),/64,000/);assert.deepEqual(validateHarnessConfig({...config(),harnesses:['hermes'],contextLength:65536}).harnesses,['hermes']);});
+
+test('expanded pack preserves original tasks and validates per-pack limits',()=>{assert.equal(tasksForHarnessPack('python-repairs-v1').length,8);assert.equal(tasksForHarnessPack('python-repairs-v2').length,20);assert.throws(()=>tasksForHarnessPack('unknown' as any));assert.equal(new Set(harnessTasks.map(t=>t.id)).size,20);assert.ok(harnessTasks.slice(8).every(t=>t.cases.length>=5));assert.throws(()=>validateHarnessConfig({...config(),pack:'python-repairs-v1',taskCount:9}));assert.equal(validateHarnessConfig({...config(),taskCount:20}).taskCount,20);});
+
+test('original v1 task snapshots are byte-for-byte stable',async()=>{const {createHash}=await import('node:crypto');assert.equal(createHash('sha256').update(JSON.stringify(tasksForHarnessPack('python-repairs-v1'))).digest('hex'),'418eb26d8fbdeb00a3336d977a47b4e126bc015baa585eb895a264bb5c6fa3c2');});

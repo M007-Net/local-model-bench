@@ -8,8 +8,9 @@ export const harnesses:{id:HarnessId;name:string;available:boolean;version:strin
  {id:'opencode',name:'OpenCode',available:true,version:'1.19.0'},
  {id:'hermes',name:'Hermes Agent',available:true,version:'0.21.5'}
 ];
-export type HarnessConfig={name:string;modelKeys:string[];harnesses:HarnessId[];pack:'python-repairs-v1';taskCount:number;seed:number;trials:number;contextLength:number;maxTokens:number;temperature:number;reasoning:'default'|'off'|'on';maxToolCalls:number;timeoutSec:number;maxTotalTokens:number|null;cpus:number;memoryMb:number};
-export const defaultHarnessConfig:HarnessConfig={name:'',modelKeys:[],harnesses:['mini-swe-agent','opencode'],pack:'python-repairs-v1',taskCount:5,seed:42,trials:1,contextLength:8192,maxTokens:1024,temperature:0,reasoning:'default',maxToolCalls:30,timeoutSec:180,maxTotalTokens:null,cpus:2,memoryMb:2048};
+export const harnessPacks=[{id:'python-repairs-v1',name:'Original repairs v1',count:8},{id:'python-repairs-v2',name:'Expanded repairs v2',count:20}] as const;
+export type HarnessConfig={name:string;modelKeys:string[];harnesses:HarnessId[];pack:typeof harnessPacks[number]['id'];taskCount:number;seed:number;trials:number;contextLength:number;maxTokens:number;temperature:number;reasoning:'default'|'off'|'on';maxToolCalls:number;timeoutSec:number;maxTotalTokens:number|null;cpus:number;memoryMb:number};
+export const defaultHarnessConfig:HarnessConfig={name:'',modelKeys:[],harnesses:['mini-swe-agent','opencode'],pack:'python-repairs-v2',taskCount:20,seed:42,trials:1,contextLength:8192,maxTokens:1024,temperature:0,reasoning:'default',maxToolCalls:30,timeoutSec:180,maxTotalTokens:null,cpus:2,memoryMb:2048};
 export type HarnessTask={id:string;version:number;category:string;description:string;files:Record<string,string>;entry:string;cases:{args:unknown[];expected:unknown}[]};
 export type TraceEvent={at:number;kind:'request'|'response'|'tool'|'message'|'error'|'verification';data:unknown};
 export type TrialMetrics={durationMs:number;startupMs:number|null;inferenceMs:number|null;toolMs:number|null;externalWaitMs:number|null;toolCalls:number|null;failedToolCalls:number|null;modelRequests:number;iterations:number|null;inputTokens:number|null;outputTokens:number|null;totalTokens:number|null;tokenSource:'measured'|'unavailable'};
@@ -23,8 +24,8 @@ export function validateHarnessConfig(c:HarnessConfig):HarnessConfig{
  if(typeof c.name!=='string'||c.name.length>200)throw Error('Invalid evaluation name');
  if(!Array.isArray(c.modelKeys)||!c.modelKeys.length||c.modelKeys.length>16||c.modelKeys.some(k=>typeof k!=='string'||!k.trim()||k.length>4096)||new Set(c.modelKeys).size!==c.modelKeys.length)throw Error('Select distinct available models');
  if(!Array.isArray(c.harnesses)||!c.harnesses.length||new Set(c.harnesses).size!==c.harnesses.length||c.harnesses.some(id=>!harnesses.some(h=>h.id===id&&h.available)))throw Error('Selected harness adapter is unavailable');
- if(c.pack!=='python-repairs-v1')throw Error('Unknown task pack');
- integer(c.taskCount,1,8,'Tasks');integer(c.seed,0,4294967295,'Seed');integer(c.trials,1,10,'Trials');integer(c.contextLength,2048,1048576,'Context');integer(c.maxTokens,32,131072,'Output limit');integer(c.maxToolCalls,1,200,'Tool calls');integer(c.timeoutSec,10,3600,'Task timeout');integer(c.memoryMb,512,8192,'Memory');
+ const pack=harnessPacks.find(p=>p.id===c.pack);if(!pack)throw Error('Unknown task pack');
+ integer(c.taskCount,1,pack.count,'Tasks');integer(c.seed,0,4294967295,'Seed');integer(c.trials,1,10,'Trials');integer(c.contextLength,2048,1048576,'Context');integer(c.maxTokens,32,131072,'Output limit');integer(c.maxToolCalls,1,200,'Tool calls');integer(c.timeoutSec,10,3600,'Task timeout');integer(c.memoryMb,512,8192,'Memory');
  if(c.maxTokens>=c.contextLength)throw Error('Leave context space for prompts and tools');
  if(c.harnesses.includes('hermes')&&c.contextLength<64000)throw Error('Hermes 0.21.5 requires at least 64,000 context tokens. Use the same context window for every selected harness.');
  if(c.maxTotalTokens!==null)integer(c.maxTotalTokens,c.maxTokens,10000000,'Total token budget');

@@ -25,7 +25,7 @@ output budgets. See [the protocol](docs/token-efficiency-benchmark.md).
 
 The Agents page also offers **Harness Evaluation** in the Windows desktop app:
 Mini-SWE-Agent, OpenCode and Hermes attempt identical objectively verified repairs in
-fresh restricted Docker sandboxes. This is evaluation, not training. See
+fresh restricted Docker sandboxes. Expanded repairs v2 has 20 tasks and 103 objective verification checks, with harder parsing, stateful logic and configuration edge cases. The original eight-task pack remains available. This is evaluation, not training. See
 [setup, live verification and limitations](docs/harness-evaluation.md).
 
 Ordinary benchmarks and Agent Worker Sweep never execute model-written code.

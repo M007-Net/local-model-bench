@@ -6,6 +6,14 @@ All notable changes to Local Model Bench are recorded here. The format follows
 
 Dates are the date the version was prepared.
 
+## 1.21.4 — 2026-10-13
+
+### Added
+
+- Expanded repairs v2: 20 objectively verified tasks, including twelve harder algorithm, parsing, configuration and stateful repair tasks with multiple edge cases.
+- New configurations default to all 20 tasks; the original eight-task v1 pack and its seeded selection remain available unchanged.
+- Reference-fixture sandbox checks cover every task without model inference; scoring and existing saved results are preserved.
+
 ## 1.21.3 — 2026-10-13
 
 ### Added

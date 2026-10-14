@@ -24,11 +24,11 @@ try{
  await page.getByRole('button',{name:'Harness Evaluation',exact:true}).click();
  await page.getByRole('heading',{name:'Harness Evaluation',exact:true}).waitFor();
  await page.getByRole('heading',{name:'Task outcome matrix',exact:true}).waitFor();
- await page.waitForFunction(()=>!(document.querySelector('.harness-fieldset') as HTMLFieldSetElement)?.disabled);assert.equal(await page.getByRole('checkbox',{name:/Hermes/}).isDisabled(),false);
+ await page.waitForFunction(()=>{const field=document.querySelector('.harness-fieldset') as HTMLFieldSetElement|null;return !!field&&!field.disabled;});assert.equal(await page.getByRole('checkbox',{name:/Hermes/}).isDisabled(),false);
  await page.getByRole('button',{name:'1: success',exact:true}).click();
  await page.getByRole('heading',{name:'Chronological execution',exact:true}).waitFor();
  assert.ok(await page.getByText('Synthetic verification fixture').isVisible());
- await page.getByLabel('Task selection seed').fill('123');assert.equal(await page.getByLabel('Task selection seed').inputValue(),'123');
+ assert.equal(await page.getByLabel('Tasks',{exact:true}).inputValue(),'20');assert.equal(await page.getByLabel('Tasks',{exact:true}).getAttribute('max'),'20');await page.getByRole('combobox',{name:'Task pack',exact:true}).selectOption('python-repairs-v1');assert.equal(await page.getByLabel('Tasks',{exact:true}).inputValue(),'8');assert.equal(await page.getByLabel('Tasks',{exact:true}).getAttribute('max'),'8');await page.getByRole('combobox',{name:'Task pack',exact:true}).selectOption('python-repairs-v2');await page.getByLabel('Tasks',{exact:true}).fill('20');await page.getByLabel('Task selection seed').fill('123');assert.equal(await page.getByLabel('Task selection seed').inputValue(),'123');
  await page.getByLabel('Measured token stopping threshold (optional)').fill('');
  await page.screenshot({path:path.join(out,'harness-fixture.png'),fullPage:true});
  const exported=await page.evaluate(async()=>{const s=await window.bench.snapshot();return window.bench.getHarnessRun(s.harnessRuns[0].id);});assert.equal(exported.trials.length,2);assert.equal(exported.environment.source,'synthetic UI fixture; no inference performed');

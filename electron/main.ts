@@ -37,7 +37,7 @@ import {buildPack,maxPackBytes,packExtensions,parsePackFile,suggestScoring,type 
 import {readFileSync,statSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {HARNESS_PROTOCOL,validateHarnessConfig,validateHarnessModels,selectHarnessTasks,type HarnessConfig,type HarnessRun,type HarnessProgress} from '../src/harness';
-import {harnessTasks} from './harness-tasks';
+import {tasksForHarnessPack} from './harness-tasks';
 import {harnessDiagnostics,dockerCommand} from './harness-sandbox';
 import {harnessText} from './harness-export';
 import type {HarnessEvent} from './harness-engine';
@@ -51,7 +51,7 @@ async function newHarnessRun(raw:HarnessConfig){
  try{
   const config=validateHarnessConfig(raw),diagnostic=await harnessDiagnostics();if(!diagnostic.ready)throw Error(diagnostic.message);
   const models=await listModels(settings());validateHarnessModels(config,models);
-  const now=new Date().toISOString(),run:HarnessRun={id:randomUUID(),created:now,updated:now,status:'running',config,protocol:HARNESS_PROTOCOL,tasks:selectHarnessTasks(harnessTasks,config.taskCount,config.seed),environment:{},trials:[],logs:[]};store.saveHarnessRun(run);
+  const now=new Date().toISOString(),run:HarnessRun={id:randomUUID(),created:now,updated:now,status:'running',config,protocol:HARNESS_PROTOCOL,tasks:selectHarnessTasks(tasksForHarnessPack(config.pack),config.taskCount,config.seed),environment:{},trials:[],logs:[]};store.saveHarnessRun(run);
   harnessProgress={runId:run.id,model:'',harness:'',task:'',trial:0,completed:0,total:config.modelKeys.length*config.harnesses.length*config.taskCount*config.trials,successes:0,failures:0,elapsedMs:0,message:'Preparing evaluation'};notifyHarness();
   harnessWorker=new Worker(path.join(__dirname,'harness-worker.cjs'),{workerData:{run,settings:settings()}});
   harnessWorker.on('message',(event:HarnessEvent)=>{try{
