@@ -21,8 +21,8 @@
   "dependencies": {
     "@lmstudio/sdk": "^2.0.0",
     "lucide-react": "^0.468.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "keywords": [
     "lm-studio",
@@ -64,8 +64,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "44.3.0",
     "electron-builder": "26.15.3",
